@@ -1,0 +1,110 @@
+name: pr labels
+
+# Two axes, both derived from the diff and neither from the linked issue:
+#   risk:  what the change reaches   -> decides approvers and release window
+#   size:  what the review costs     -> decides whether it fits the time you have
+#
+# They are deliberately independent: a 20-line migration is size S with
+# risk high, and 600 lines of translations is size M with risk low.
+#
+# pull_request_target is used to get a write token on fork PRs. It is safe
+# here because this job NEVER checks out PR code: it only reads the file list.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            // --- risk: a direct translation of the label descriptions ------
+            const RISK_RULES = [
+              [/^backend\/alembic\/versions\//,                     'high'],
+              [/^backend\/app\/models\//,                           'high'],
+              [/^backend\/app\/core\/(auth|auth_policy|webauthn)/,  'high'],
+              [/^backend\/app\/api\/[^/]*auth/,                     'high'],
+              [/^backend\/app\/fiscal\//,                           'high'],
+              [/^backend\/app\/(api|services|providers|schemas)\//,  'medium'],
+              [/^charts\//,                                         'medium'],
+              [/^(install\.sh|docker-compose.*\.yml)$/,             'medium'],
+              [/^frontend\/(Dockerfile|default\.conf\.template)$/,  'medium'],
+            ];
+
+            // --- size: thresholds taken from this repo's own distribution ---
+            // The median PR here is ~280 lines, so the common 9/29/99/499
+            // scale would put 80% of open PRs into two buckets and decide
+            // nothing. These cuts split the queue 9 / 20 / 10.
+            const SMALL_MAX = 150, MEDIUM_MAX = 700;
+
+            // A generated file is not review work: a dependency bump is two
+            // thousand lines of lockfile and nothing to read. Counting raw
+            // would mark the most trivial PR in the repo as the largest.
+            const GENERATED = [
+              /(^|\/)package-lock\.json$/, /(^|\/)pnpm-lock\.yaml$/,
+              /(^|\/)yarn\.lock$/, /(^|\/)poetry\.lock$/, /(^|\/)uv\.lock$/,
+              /(^|\/)Cargo\.lock$/, /(^|\/)composer\.lock$/, /\.lock$/,
+              /(^|\/)go\.sum$/, /\.min\.(js|css)$/, /(^|\/)node_modules\//,
+              /(^|\/)dist\//, /\.snap$/,
+            ];
+            const isGenerated = (p) => GENERATED.some((re) => re.test(p));
+
+            const ORDER = ['low', 'medium', 'high'];
+            const repo = context.repo;
+            const pr = context.payload.pull_request;
+            const files = await github.paginate(github.rest.pulls.listFiles,
+              { ...repo, pull_number: pr.number, per_page: 100 });
+
+            let level = 'low', trigger = null, lines = 0, skipped = 0;
+            for (const f of files) {
+              const n = (f.additions || 0) + (f.deletions || 0);
+              if (isGenerated(f.filename)) { skipped += n; continue; }
+              lines += n;
+              for (const [re, lvl] of RISK_RULES) {
+                if (re.test(f.filename) && ORDER.indexOf(lvl) > ORDER.indexOf(level)) {
+                  level = lvl; trigger = f.filename;
+                }
+              }
+            }
+            const size = lines <= SMALL_MAX ? 'S' : (lines <= MEDIUM_MAX ? 'M' : 'L');
+
+            const current = pr.labels.map((l) => l.name);
+            const swap = async (prefix, target, escalateOnly) => {
+              const existing = current.filter((n) => n.startsWith(prefix));
+              if (escalateOnly && existing.length === 1) {
+                // Automation may RAISE risk, never lower it: if a reviewer set
+                // high by hand, they saw something a file path cannot show.
+                const now = existing[0].slice(prefix.length);
+                if (ORDER.indexOf(level) <= ORDER.indexOf(now)) return false;
+              }
+              if (existing.length === 1 && existing[0] === target) return false;
+              for (const old of existing) {
+                await github.rest.issues.removeLabel(
+                  { ...repo, issue_number: pr.number, name: old }).catch(() => {});
+              }
+              await github.rest.issues.addLabels(
+                { ...repo, issue_number: pr.number, labels: [target] });
+              return true;
+            };
+
+            const riskChanged = await swap('risk: ', `risk: ${level}`, true);
+            await swap('size: ', `size: ${size}`, false);
+
+            if (!riskChanged || level === 'low') return;
+
+            const requires = level === 'high'
+              ? 'It needs two approvals, an agreed design on the issue, and a rollback plan.'
+              : 'It needs a review from the area owner and tests on the changed path.';
+            const note = skipped
+              ? ` (${skipped} lines in generated files were not counted for size.)` : '';
+            await github.rest.issues.createComment({ ...repo, issue_number: pr.number,
+              body: `Labelled \`risk: ${level}\` and \`size: ${size}\` automatically: ` +
+                    `this PR touches \`${trigger}\` and changes ${lines} reviewable lines. ` +
+                    `${requires}${note}` });
