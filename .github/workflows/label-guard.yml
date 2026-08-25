@@ -40,10 +40,14 @@ jobs:
             const repo = context.repo;
             const n = target.number;
 
+            // Tolerate the label already being gone: two people editing at
+            // once should not turn this into a red X on the issue.
             if (context.payload.action === 'labeled') {
-              await github.rest.issues.removeLabel({ ...repo, issue_number: n, name: label });
+              await github.rest.issues.removeLabel(
+                { ...repo, issue_number: n, name: label }).catch(() => {});
             } else {
-              await github.rest.issues.addLabels({ ...repo, issue_number: n, labels: [label] });
+              await github.rest.issues.addLabels(
+                { ...repo, issue_number: n, labels: [label] }).catch(() => {});
             }
 
             await github.rest.issues.createComment({
