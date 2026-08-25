@@ -1,8 +1,14 @@
 name: pr labels
 
-# Two axes, both derived from the diff and neither from the linked issue:
+# Two axes:
 #   risk:  what the change reaches   -> decides approvers and release window
 #   size:  what the review costs     -> decides whether it fits the time you have
+#
+# Risk has two sources and takes the higher of the two. Triage read the code
+# and reasoned about the whole change; the path rules only see file names.
+# Neither dominates: the paths catch an implementation that turned out to need
+# a migration, and triage catches a risk no file name can show. Size has one
+# source, the diff, because it is arithmetic.
 #
 # They are deliberately independent: a 20-line migration is size S with
 # risk high, and 600 lines of translations is size M with risk low.
@@ -62,18 +68,44 @@ jobs:
             const files = await github.paginate(github.rest.pulls.listFiles,
               { ...repo, pull_number: pr.number, per_page: 100 });
 
-            let level = 'low', trigger = null, lines = 0, skipped = 0;
+            let pathLevel = 'low', pathFile = null, lines = 0, skipped = 0;
             for (const f of files) {
               const n = (f.additions || 0) + (f.deletions || 0);
               if (isGenerated(f.filename)) { skipped += n; continue; }
               lines += n;
               for (const [re, lvl] of RISK_RULES) {
-                if (re.test(f.filename) && ORDER.indexOf(lvl) > ORDER.indexOf(level)) {
-                  level = lvl; trigger = f.filename;
+                if (re.test(f.filename) && ORDER.indexOf(lvl) > ORDER.indexOf(pathLevel)) {
+                  pathLevel = lvl; pathFile = f.filename;
                 }
               }
             }
             const size = lines <= SMALL_MAX ? 'S' : (lines <= MEDIUM_MAX ? 'M' : 'L');
+
+            // Risk already decided on the linked issue, if there is one.
+            let issueLevel = null, issueRef = null;
+            const LINKED = `query($o:String!,$n:String!,$p:Int!){
+              repository(owner:$o,name:$n){ pullRequest(number:$p){
+                closingIssuesReferences(first:5){
+                  nodes{ number labels(first:30){ nodes{ name } } } } } } }`;
+            try {
+              const d = await github.graphql(LINKED,
+                { o: repo.owner, n: repo.repo, p: pr.number });
+              for (const iss of d.repository.pullRequest.closingIssuesReferences.nodes) {
+                const found = iss.labels.nodes.map((l) => l.name)
+                  .find((n) => n.startsWith('risk: '));
+                if (!found) continue;
+                const lvl = found.slice(6);
+                if (ORDER.indexOf(lvl) > ORDER.indexOf(issueLevel || 'low')) {
+                  issueLevel = lvl; issueRef = iss.number;
+                }
+              }
+            } catch (e) {
+              // No linked issue, or the query failed: the paths decide alone.
+            }
+
+            const fromIssue = issueLevel
+              && ORDER.indexOf(issueLevel) > ORDER.indexOf(pathLevel);
+            const level = fromIssue ? issueLevel : pathLevel;
 
             const current = pr.labels.map((l) => l.name);
             const swap = async (prefix, target, escalateOnly) => {
