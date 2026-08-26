@@ -1186,3 +1186,16 @@ export interface InvoiceShareLink {
   /** A path, not a URL: only the browser reliably knows the public origin. */
   path: string
 }
+
+/** What the filter bar needs to render itself: which years have
+ *  invoices, and how many sit in each state for the selected year. */
+export interface InvoiceFacets {
+  years: number[]
+  counts: {
+    all: number
+    open: number
+    overdue: number
+    paid: number
+    draft: number
+  }
+}

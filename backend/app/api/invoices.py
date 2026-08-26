@@ -21,6 +21,7 @@ from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import (
     AllocationCreate,
     InvoiceCreate,
+    InvoiceFacets,
     InvoiceRead,
     InvoiceSettingsRead,
     InvoiceSettingsUpdate,
@@ -94,6 +95,20 @@ async def write_settings(
     return settings
 
 
+@router.get("/facets", response_model=InvoiceFacets)
+async def read_facets(
+    year: Optional[int] = Query(None, ge=1970, le=2200),
+    ctx: WorkspaceContext = Depends(read_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Years that have invoices, and how many are in each state.
+
+    One call for the whole filter bar. The counts use the same derived
+    state the list does, so a chip reading 3 opens a list of exactly 3.
+    """
+    return await invoice_service.facets(session, ctx.workspace.id, year)
+
+
 @router.get("/summary", response_model=InvoiceSummary)
 async def read_summary(
     ctx: WorkspaceContext = Depends(read_ctx),
@@ -160,6 +175,10 @@ async def write_issuer(
 @router.get("", response_model=list[InvoiceRead])
 async def list_invoices(
     state: Optional[str] = Query(None, description="Filter by derived state"),
+    # Scopes the list only. The summary stays global on purpose: an
+    # unpaid invoice from two years ago is still owed today, so
+    # "outstanding" has no year.
+    year: Optional[int] = Query(None, ge=1970, le=2200, description="Filter by issue year"),
     payee_id: Optional[uuid.UUID] = Query(None),
     q: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
@@ -168,7 +187,8 @@ async def list_invoices(
     session: AsyncSession = Depends(get_async_session),
 ):
     invoices = await invoice_service.list_invoices(
-        session, ctx.workspace.id, state=state, payee_id=payee_id, q=q, limit=limit, offset=offset
+        session, ctx.workspace.id, state=state, year=year, payee_id=payee_id,
+        q=q, limit=limit, offset=offset,
     )
     return [_serialize(inv) for inv in invoices]
 

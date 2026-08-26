@@ -21,6 +21,7 @@ import type {
   PayeeSummary,
   Invoice,
   InvoiceDocumentPayload,
+  InvoiceFacets,
   InvoiceLineInput,
   InvoiceShareLink,
   IssuerProfile,
@@ -1685,7 +1686,11 @@ export interface InvoiceWritePayload {
 }
 
 export const invoices = {
-  list: async (params?: { state?: string; payee_id?: string; q?: string } | Record<string, unknown>): Promise<Invoice[]> => {
+  facets: async (year?: number): Promise<InvoiceFacets> => {
+    const { data } = await api.get('/invoices/facets', { params: year ? { year } : undefined })
+    return data
+  },
+  list: async (params?: { state?: string; year?: number; payee_id?: string; q?: string } | Record<string, unknown>): Promise<Invoice[]> => {
     const cleanParams = params && !('queryKey' in params) ? params : undefined
     const { data } = await api.get('/invoices', { params: cleanParams })
     return data

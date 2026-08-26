@@ -95,26 +95,43 @@ export function Segmented<T extends string>({
 }: {
   value: T
   onChange: (value: T) => void
-  options: { value: T; label: React.ReactNode }[]
+  options: { value: T; label: React.ReactNode; count?: number }[]
   testIdPrefix: string
 }) {
   return (
     <div className="inline-flex rounded-lg border border-border bg-muted p-0.5 text-xs font-medium">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          data-testid={`${testIdPrefix}-${option.value}`}
-          className={cn(
-            'px-3 py-1.5 rounded-md transition-colors whitespace-nowrap',
-            value === option.value
-              ? 'bg-card text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+      {options.map((option) => {
+        const active = value === option.value
+        return (
+          <button
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            data-testid={`${testIdPrefix}-${option.value}`}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors whitespace-nowrap',
+              active
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {option.label}
+            {/* A zero is worth showing: "Overdue 0" is the answer to the
+                question, and hiding it makes the reader click to find
+                out. `undefined` means the count is still loading. */}
+            {option.count !== undefined && (
+              <span
+                data-testid={`${testIdPrefix}-${option.value}-count`}
+                className={cn(
+                  'tabular-nums text-[11px]',
+                  active ? 'text-muted-foreground' : 'text-muted-foreground/70',
+                )}
+              >
+                {option.count}
+              </span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }

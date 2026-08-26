@@ -97,6 +97,7 @@ export default function InvoiceDetailPage() {
     void queryClient.invalidateQueries({ queryKey: ['invoice-document', id] })
     void queryClient.invalidateQueries({ queryKey: ['invoices'] })
     void queryClient.invalidateQueries({ queryKey: ['invoice-summary'] })
+    void queryClient.invalidateQueries({ queryKey: ['invoice-facets'] })
   }
 
   const onError = (error: unknown) => {

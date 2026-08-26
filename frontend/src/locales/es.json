@@ -294,7 +294,10 @@
       "d61_90": "61–90 days late",
       "d90_plus": "90+ days late"
     },
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "allYears": "All years",
+    "emptyYear": "No invoices issued in {{year}}.",
+    "showAllYears": "Show all years"
   },
   "collections": {
     "title": "Colecciones",

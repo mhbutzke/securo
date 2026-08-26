@@ -2,7 +2,13 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Receipt, Plus, Settings2 } from 'lucide-react'
+import {
+  Calendar as CalendarIcon,
+  ChevronDown,
+  Plus,
+  Receipt,
+  Settings2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -24,6 +30,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, StateBadge, TH } from '@/components/invoice-ui'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
@@ -76,6 +88,9 @@ export default function InvoicesPage() {
   const { canWrite } = useWorkspace()
   const currency = user?.preferences?.currency_display ?? 'USD'
 
+  // `null` is "every year". The default is the current one, which is
+  // what someone opening the page is almost always asking about.
+  const [year, setYear] = useState<number | null>(() => new Date().getFullYear())
   const [filter, setFilter] = useState<Filter>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -88,9 +103,19 @@ export default function InvoicesPage() {
     queryKey: ['invoice-summary'],
     queryFn: invoicesApi.summary,
   })
+  const { data: facets } = useQuery({
+    queryKey: ['invoice-facets', year],
+    queryFn: () => invoicesApi.facets(year ?? undefined),
+  })
   const { data: list, isLoading } = useQuery({
-    queryKey: ['invoices', filter],
-    queryFn: () => invoicesApi.list(filter === 'all' || filter === 'open' ? {} : { state: filter }),
+    queryKey: ['invoices', filter, year],
+    queryFn: () =>
+      invoicesApi.list({
+        // `open` spans three derived states, so it is filtered here
+        // rather than asked for three times.
+        ...(filter === 'all' || filter === 'open' ? {} : { state: filter }),
+        ...(year ? { year } : {}),
+      }),
   })
 
   const visible = useMemo(() => {
@@ -239,19 +264,59 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Segmented<Filter>
           value={filter}
           onChange={setFilter}
           testIdPrefix="invoice-filter"
-          options={[
-            { value: 'all', label: t('invoices.filter.all') },
-            { value: 'open', label: t('invoices.filter.open') },
-            { value: 'overdue', label: t('invoices.filter.overdue') },
-            { value: 'paid', label: t('invoices.filter.paid') },
-            { value: 'draft', label: t('invoices.filter.draft') },
-          ]}
+          options={(['all', 'open', 'overdue', 'paid', 'draft'] as const).map((value) => ({
+            value,
+            label: t(`invoices.filter.${value}`),
+            count: facets?.counts[value],
+          }))}
         />
+
+        {/* The year sits with the list's own controls, not with the
+            summary: it scopes what is listed, and the summary above
+            deliberately has no year — an unpaid 2024 invoice is still
+            owed today. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-testid="invoice-year-trigger"
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/50"
+            >
+              <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              {year ?? t('invoices.allYears')}
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-[160px] p-1 bg-card border border-border rounded-xl shadow-md"
+          >
+            <DropdownMenuItem
+              onClick={() => setYear(null)}
+              data-testid="invoice-year-all"
+              className="text-sm"
+            >
+              {t('invoices.allYears')}
+            </DropdownMenuItem>
+            {/* Only years that actually have an invoice. Offering an
+                empty year is offering a dead end. */}
+            {(facets?.years ?? []).map((option) => (
+              <DropdownMenuItem
+                key={option}
+                onClick={() => setYear(option)}
+                data-testid={`invoice-year-${option}`}
+                className="text-sm tabular-nums"
+              >
+                {option}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <SectionCard>
@@ -265,13 +330,27 @@ export default function InvoicesPage() {
           <div className="px-5 py-14 text-center" data-testid="invoices-empty">
             <Receipt className="h-8 w-8 mx-auto text-muted-foreground/50" />
             <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto">
-              {filter === 'all' ? t('invoices.empty') : t('invoices.emptyFiltered')}
+              {filter !== 'all'
+                ? t('invoices.emptyFiltered')
+                : year
+                  ? t('invoices.emptyYear', { year })
+                  : t('invoices.empty')}
             </p>
-            {filter === 'all' && canWrite && (
-              <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-4 w-4 mr-1.5" />
-                {t('invoices.new')}
+            {/* When a year emptied the list, the useful next move is to
+                widen it — not to create an invoice in a year nobody is
+                looking at. */}
+            {filter === 'all' && year && facets && facets.years.length > 0 ? (
+              <Button size="sm" variant="outline" className="mt-4" onClick={() => setYear(null)}>
+                {t('invoices.showAllYears')}
               </Button>
+            ) : (
+              filter === 'all' &&
+              canWrite && (
+                <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  {t('invoices.new')}
+                </Button>
+              )
             )}
           </div>
         ) : (
@@ -414,6 +493,7 @@ function CreateInvoiceDialog({
       // behind for whenever the user comes back to it.
       void queryClient.invalidateQueries({ queryKey: ['invoices'] })
       void queryClient.invalidateQueries({ queryKey: ['invoice-summary'] })
+      void queryClient.invalidateQueries({ queryKey: ['invoice-facets'] })
       onOpenChange(false)
       setPayeeId('')
       setTotal('')

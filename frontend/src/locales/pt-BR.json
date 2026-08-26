@@ -294,7 +294,10 @@
       "d61_90": "61–90 dias",
       "d90_plus": "90+ dias"
     },
-    "moreActions": "Mais ações"
+    "moreActions": "Mais ações",
+    "allYears": "Todos os anos",
+    "emptyYear": "Nenhuma cobrança emitida em {{year}}.",
+    "showAllYears": "Ver todos os anos"
   },
   "collections": {
     "title": "Coleções",

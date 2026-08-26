@@ -673,3 +673,114 @@ async def test_viewer_reads_but_never_writes(
         call = getattr(client, method)
         resp = await call(url, headers=viewer_headers, **({"json": body} if body else {}))
         assert resp.status_code == 403, f"{method.upper()} {url} -> {resp.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# The filter bar: years and counts
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_facets_count_every_state_the_bar_offers(
+    client: AsyncClient, biz_headers, inflow
+):
+    """A chip reading 3 must open a list of exactly 3.
+
+    The counts come from the same derived state the list filter uses, so
+    this asserts the two agree rather than that each is plausible on its
+    own.
+    """
+    await _create(client, biz_headers, total="100.00")  # open
+    paid = await _create(client, biz_headers, total="50.00")
+    await client.post(
+        f"/api/invoices/{paid['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    await _create(
+        client, biz_headers, total="200.00",
+        issue_date=str(date.today() - timedelta(days=40)),
+        due_date=str(date.today() - timedelta(days=10)),
+    )  # overdue
+
+    facets = (await client.get("/api/invoices/facets", headers=biz_headers)).json()
+    assert facets["counts"]["all"] == 3
+    assert facets["counts"]["paid"] == 1
+    assert facets["counts"]["overdue"] == 1
+    # `open` means "still expected", which includes the overdue one.
+    assert facets["counts"]["open"] == 2
+    assert facets["counts"]["draft"] == 0
+
+    for facet in ("paid", "overdue", "draft"):
+        listed = await client.get(f"/api/invoices?state={facet}", headers=biz_headers)
+        assert len(listed.json()) == facets["counts"][facet], facet
+
+
+@pytest.mark.asyncio
+async def test_facets_list_only_years_that_have_invoices(client: AsyncClient, biz_headers):
+    await _create(client, biz_headers, issue_date="2024-06-10", due_date="2024-07-10")
+    await _create(client, biz_headers, issue_date="2026-02-01", due_date="2026-03-01")
+    facets = (await client.get("/api/invoices/facets", headers=biz_headers)).json()
+    # Newest first: the picker opens on the year someone is most likely
+    # to want, and an empty year is never offered.
+    assert facets["years"] == [2026, 2024]
+
+
+@pytest.mark.asyncio
+async def test_facet_counts_respect_the_selected_year(client: AsyncClient, biz_headers):
+    await _create(client, biz_headers, issue_date="2024-06-10", due_date="2024-07-10")
+    await _create(client, biz_headers, issue_date="2026-02-01", due_date="2026-03-01")
+    await _create(client, biz_headers, issue_date="2026-05-01", due_date="2026-06-01")
+
+    scoped = (await client.get("/api/invoices/facets?year=2026", headers=biz_headers)).json()
+    assert scoped["counts"]["all"] == 2
+    # The year list itself is never narrowed, or picking a year would
+    # remove every other year from the picker.
+    assert scoped["years"] == [2026, 2024]
+
+    assert (
+        await client.get("/api/invoices/facets?year=2024", headers=biz_headers)
+    ).json()["counts"]["all"] == 1
+
+
+@pytest.mark.asyncio
+async def test_the_year_filter_scopes_the_list(client: AsyncClient, biz_headers):
+    old = await _create(client, biz_headers, issue_date="2024-06-10", due_date="2024-07-10")
+    new = await _create(client, biz_headers, issue_date="2026-02-01", due_date="2026-03-01")
+
+    listed = await client.get("/api/invoices?year=2024", headers=biz_headers)
+    assert [i["id"] for i in listed.json()] == [old["id"]]
+
+    listed = await client.get("/api/invoices?year=2026", headers=biz_headers)
+    assert [i["id"] for i in listed.json()] == [new["id"]]
+
+    # Omitting the year means every year, not the current one: the
+    # default belongs to the UI, not to the API.
+    assert len((await client.get("/api/invoices", headers=biz_headers)).json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_the_year_filter_combines_with_state(client: AsyncClient, biz_headers):
+    await _create(client, biz_headers, issue_date="2024-06-10", due_date="2024-07-10")
+    await _create(client, biz_headers, issue_date="2026-02-01", due_date="2026-03-01")
+    listed = await client.get("/api/invoices?year=2024&state=overdue", headers=biz_headers)
+    assert len(listed.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_summary_is_not_scoped_by_year(client: AsyncClient, biz_headers):
+    """An unpaid invoice from two years ago is still owed today, so
+    "outstanding" has no year. Only the list is scoped."""
+    await _create(client, biz_headers, total="900.00",
+                  issue_date="2024-06-10", due_date="2024-07-10")
+    summary = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    assert summary["outstanding"] == "900.00"
+
+
+@pytest.mark.asyncio
+async def test_facets_are_gated_like_every_other_route(
+    client: AsyncClient, auth_headers, personal_ws
+):
+    resp = await client.get(
+        "/api/invoices/facets",
+        headers={**auth_headers, "X-Workspace-Id": str(personal_ws.id)},
+    )
+    assert resp.status_code == 404

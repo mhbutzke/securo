@@ -206,6 +206,26 @@ class ShareLinkRead(BaseModel):
     path: str
 
 
+class InvoiceFacetCounts(BaseModel):
+    all: int
+    open: int
+    overdue: int
+    paid: int
+    draft: int
+
+
+class InvoiceFacets(BaseModel):
+    """What the filter bar needs to render itself.
+
+    `years` is every year that has an invoice, newest first, and is never
+    narrowed by the `year` parameter — otherwise picking a year would
+    remove every other year from the picker.
+    """
+
+    years: list[int]
+    counts: InvoiceFacetCounts
+
+
 class InvoiceSettingsRead(BaseModel):
     preset: InvoicePreset
     document_required: bool

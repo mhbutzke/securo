@@ -270,6 +270,7 @@ async def list_invoices(
     workspace_id: uuid.UUID,
     *,
     state: Optional[str] = None,
+    year: Optional[int] = None,
     payee_id: Optional[uuid.UUID] = None,
     q: Optional[str] = None,
     limit: int = 100,
@@ -289,6 +290,7 @@ async def list_invoices(
         Invoice.workspace_id == workspace_id,
         Invoice.document_type == "invoice",
     )
+    query = _apply_year(query, year)
     if payee_id:
         query = query.where(Invoice.payee_id == payee_id)
     if q:
@@ -302,6 +304,73 @@ async def list_invoices(
     if state:
         invoices = [inv for inv in invoices if derive_state(inv) == state]
     return invoices[offset : offset + limit]
+
+
+def _apply_year(query: Select, year: Optional[int]) -> Select:
+    """Narrow to one calendar year, by issue date.
+
+    Issue date rather than competence: "the 2025 invoices" means the ones
+    issued in 2025, which is what a person scanning a list is asking for.
+    The accrual date is the accountant's axis and belongs in a report,
+    not in a browse filter.
+    """
+    if year is None:
+        return query
+    return query.where(
+        Invoice.issue_date >= _date(year, 1, 1),
+        Invoice.issue_date <= _date(year, 12, 31),
+    )
+
+
+#: What the filter bar offers, and what each one counts. `overdue` is a
+#: subset of `open` on purpose — these are filters, not a partition, and
+#: a freelancer wants to jump straight to the late ones.
+FACET_STATES: dict[str, tuple[str, ...]] = {
+    "all": (),
+    "open": ("open", "partial", "overdue"),
+    "overdue": ("overdue",),
+    "paid": ("paid",),
+    "draft": ("draft",),
+}
+
+
+async def facets(
+    session: AsyncSession, workspace_id: uuid.UUID, year: Optional[int] = None
+) -> dict[str, Any]:
+    """What the filter bar needs: which years exist, and how many in each state.
+
+    One call rather than one per chip. The counts come from the same
+    derived state the list uses, so a chip that says 3 opens a list of
+    exactly 3 — a count computed a second way is a count that eventually
+    disagrees.
+    """
+    years_result = await session.execute(
+        select(func.extract("year", Invoice.issue_date))
+        .where(
+            Invoice.workspace_id == workspace_id,
+            Invoice.document_type == "invoice",
+        )
+        .distinct()
+    )
+    years = sorted((int(row[0]) for row in years_result.all()), reverse=True)
+
+    result = await session.execute(
+        _apply_year(
+            _base_query().where(
+                Invoice.workspace_id == workspace_id,
+                Invoice.document_type == "invoice",
+            ),
+            year,
+        )
+    )
+    invoices = list(result.unique().scalars().all())
+    states = [derive_state(invoice) for invoice in invoices]
+
+    counts = {
+        facet: len(invoices) if not wanted else sum(1 for s in states if s in wanted)
+        for facet, wanted in FACET_STATES.items()
+    }
+    return {"years": years, "counts": counts}
 
 
 async def aging_summary(
