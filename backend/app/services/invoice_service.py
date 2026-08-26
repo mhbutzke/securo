@@ -12,6 +12,7 @@ The cost of the alternative is visible in every peer product that stores
 due date moves, and a permanent tax on every query downstream that has
 to remember the state is really two states.
 """
+import secrets
 import uuid
 from datetime import date as _date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -22,9 +23,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.models.invoice import Invoice, InvoiceAllocation, InvoiceLine, InvoiceSettings
 from app.models.payee import Payee
 from app.models.transaction import Transaction
+from app.models.workspace import Workspace, WorkspaceTaxId
 
 ZERO = Decimal("0.00")
 
@@ -62,6 +65,29 @@ PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
+async def _settings_for_update(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> InvoiceSettings:
+    """The settings row, locked for the length of the transaction.
+
+    Numbering has to be allocated by the database, not by application
+    code: two invoices issued at the same instant would otherwise read
+    the same `next_number` and one of them would die on the unique
+    constraint. The row lock makes the second wait rather than fail.
+
+    `with_for_update` renders nothing on SQLite, which the test suite
+    uses. That is acceptable because the guarantee is still there in
+    production, and the unique constraint remains the backstop in both.
+    """
+    await get_settings(session, workspace_id)  # ensure the row exists
+    result = await session.execute(
+        select(InvoiceSettings)
+        .where(InvoiceSettings.workspace_id == workspace_id)
+        .with_for_update()
+    )
+    return result.scalar_one()
+
+
 async def get_settings(session: AsyncSession, workspace_id: uuid.UUID) -> InvoiceSettings:
     """This workspace's settings, creating the default row on first read.
 
@@ -84,7 +110,10 @@ async def get_settings(session: AsyncSession, workspace_id: uuid.UUID) -> Invoic
 
 #: Fields a caller may blank out deliberately. Everything else ignores a
 #: null, so a partial update never wipes what it did not mention.
-_NULLABLE_SETTINGS = ("logo_url", "issuer_display_name", "footer_note", "series", "number_prefix")
+_NULLABLE_SETTINGS = (
+    "logo_url", "issuer_display_name", "footer_note", "series", "number_prefix",
+    "payment_details", "accent_color",
+)
 
 
 async def update_settings(
@@ -106,6 +135,60 @@ async def update_settings(
 
     await session.flush()
     return settings
+
+
+# ---------------------------------------------------------------------------
+# Issuer identity — the workspace describing itself
+# ---------------------------------------------------------------------------
+async def get_issuer_tax_ids(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[WorkspaceTaxId]:
+    result = await session.execute(
+        select(WorkspaceTaxId)
+        .where(WorkspaceTaxId.workspace_id == workspace_id)
+        .order_by(WorkspaceTaxId.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def set_issuer_tax_ids(
+    session: AsyncSession, workspace_id: uuid.UUID, incoming: list[dict[str, Any]]
+) -> list[WorkspaceTaxId]:
+    """Replace this workspace's fiscal documents with `incoming`.
+
+    Replace rather than merge, exactly as the payee side does: the caller
+    sends the set that should remain, which makes removing a document the
+    same operation as changing one. Validation goes through the same named
+    validators — one implementation, asserted from both call sites.
+    """
+    normalised: dict[TaxIdKind, str] = {}
+    for item in incoming:
+        kind = TaxIdKind(item["kind"])
+        value, error = normalise_and_validate(kind, item["value"])
+        # An emptied field means "drop this document", not "store nothing".
+        if error == "empty":
+            continue
+        if error:
+            raise InvoiceError(
+                f"invalid_tax_id:{kind.value}:{error}",
+                f"That does not look like a valid {kind.value.upper()}",
+            )
+        normalised[kind] = value
+
+    existing = {row.kind: row for row in await get_issuer_tax_ids(session, workspace_id)}
+    for kind_value, row in existing.items():
+        if TaxIdKind(kind_value) not in normalised:
+            await session.delete(row)
+    for kind, value in normalised.items():
+        row = existing.get(kind.value)
+        if row is not None:
+            row.value = value
+        else:
+            session.add(
+                WorkspaceTaxId(workspace_id=workspace_id, kind=kind.value, value=value)
+            )
+    await session.flush()
+    return await get_issuer_tax_ids(session, workspace_id)
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +489,9 @@ async def create_invoice(
     if settings.initial_state == "open":
         if (invoice.total or ZERO) <= ZERO:
             raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
-        _issue(invoice, settings)
+        locked = await _settings_for_update(session, workspace_id)
+        workspace = await session.get(Workspace, workspace_id)
+        _issue(invoice, locked, workspace)
 
     await session.flush()
     return invoice
@@ -464,7 +549,9 @@ async def update_invoice(session: AsyncSession, invoice: Invoice, data: dict[str
     return invoice
 
 
-def _build_snapshot(invoice: Invoice, settings: InvoiceSettings) -> dict[str, Any]:
+def _build_snapshot(
+    invoice: Invoice, settings: InvoiceSettings, workspace: Optional[Workspace] = None
+) -> dict[str, Any]:
     """Freeze what the document said about itself.
 
     Read at render time instead of the live settings and the live payee,
@@ -475,13 +562,23 @@ def _build_snapshot(invoice: Invoice, settings: InvoiceSettings) -> dict[str, An
     return {
         "issuer": {
             "display_name": settings.issuer_display_name,
+            "legal_name": workspace.legal_name if workspace else None,
+            "address": workspace.address if workspace else None,
             "logo_url": settings.logo_url,
             "footer_note": settings.footer_note,
+            "payment_details": settings.payment_details,
+            "accent_color": settings.accent_color,
         },
         "counterparty": {
             "name": payee.name if payee else None,
             "email": payee.email if payee else None,
             "address": payee.address if payee else None,
+            # The client's documents as they stood on the day. A CNPJ
+            # corrected next month must not appear on a document the
+            # client already holds showing the old one.
+            "tax_ids": [
+                {"kind": t.kind, "value": t.value} for t in (payee.tax_ids if payee else [])
+            ],
         },
         "template": settings.template or {},
         "number_prefix": settings.number_prefix,
@@ -489,7 +586,9 @@ def _build_snapshot(invoice: Invoice, settings: InvoiceSettings) -> dict[str, An
     }
 
 
-def _issue(invoice: Invoice, settings: InvoiceSettings) -> None:
+def _issue(
+    invoice: Invoice, settings: InvoiceSettings, workspace: Optional[Workspace] = None
+) -> None:
     """Assign the next number and open the invoice.
 
     The counter only ever moves forward. A voided invoice keeps the
@@ -502,7 +601,7 @@ def _issue(invoice: Invoice, settings: InvoiceSettings) -> None:
     invoice.series = settings.series
     settings.next_number += 1
     invoice.status = "open"
-    invoice.snapshot = _build_snapshot(invoice, settings)
+    invoice.snapshot = _build_snapshot(invoice, settings, workspace)
 
 
 async def issue_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
@@ -513,7 +612,9 @@ async def issue_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
         raise InvoiceError("lines_required", "This workspace requires invoices to carry line items")
     if (invoice.total or ZERO) <= ZERO:
         raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
-    _issue(invoice, settings)
+    locked = await _settings_for_update(session, invoice.workspace_id)
+    workspace = await session.get(Workspace, invoice.workspace_id)
+    _issue(invoice, locked, workspace)
     await session.flush()
     return invoice
 
@@ -655,6 +756,55 @@ async def unallocate(session: AsyncSession, invoice: Invoice, allocation_id: uui
     await session.delete(allocation)
     await session.flush()
     await session.refresh(invoice, ["allocations"])
+
+
+# ---------------------------------------------------------------------------
+# Sharing
+# ---------------------------------------------------------------------------
+async def create_share_token(session: AsyncSession, invoice: Invoice) -> str:
+    """A link anyone holding it can open, and nothing more.
+
+    Only issued invoices get one: a draft is not a document, and handing
+    out a link to something still being written invites the client to
+    read a number that is about to change.
+
+    The token is the credential, so it is generated with
+    `secrets.token_urlsafe` and never derived from the invoice id — a
+    guessable link would expose every client's document to anyone who
+    could count.
+    """
+    if invoice.status == "draft":
+        raise InvoiceError("draft_not_shareable", "Issue the invoice before sharing it")
+    token = invoice.share_token
+    if not token:
+        # Bound to a local so the return type is a `str`, not the
+        # `str | None` the column is: the branch above guarantees it.
+        token = secrets.token_urlsafe(32)
+        invoice.share_token = token
+        await session.flush()
+    return token
+
+
+async def revoke_share_token(session: AsyncSession, invoice: Invoice) -> None:
+    """Nulling the token is the revocation. Anyone holding the old link
+    gets a 404, which is the same answer a link that never existed gets."""
+    invoice.share_token = None
+    await session.flush()
+
+
+async def get_invoice_by_share_token(session: AsyncSession, token: str) -> Optional[Invoice]:
+    """The public lookup. Scoped to nothing — the token *is* the scope."""
+    if not token:
+        return None
+    result = await session.execute(
+        _base_query().where(
+            Invoice.share_token == token,
+            # A voided document must stop being reachable: it was
+            # cancelled, and a link that keeps serving it says otherwise.
+            Invoice.status.in_(("open", "uncollectible")),
+        )
+    )
+    return result.unique().scalar_one_or_none()
 
 
 async def invoice_links_for_transactions(

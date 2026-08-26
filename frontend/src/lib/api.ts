@@ -20,7 +20,11 @@ import type {
   Payee,
   PayeeSummary,
   Invoice,
+  InvoiceDocumentPayload,
   InvoiceLineInput,
+  InvoiceShareLink,
+  IssuerProfile,
+  IssuerTaxId,
   InvoiceSettings,
   InvoiceSummary,
   RecurringTransaction,
@@ -1742,4 +1746,47 @@ export const invoices = {
     const { data } = await api.patch('/invoices/settings', payload)
     return data
   },
+  issuer: async (): Promise<IssuerProfile> => {
+    const { data } = await api.get('/invoices/issuer')
+    return data
+  },
+  updateIssuer: async (payload: {
+    legal_name?: string | null
+    address?: string | null
+    tax_ids?: IssuerTaxId[]
+  }): Promise<IssuerProfile> => {
+    const { data } = await api.patch('/invoices/issuer', payload)
+    return data
+  },
+  document: async (id: string): Promise<InvoiceDocumentPayload> => {
+    const { data } = await api.get(`/invoices/${id}/document`)
+    return data
+  },
+  /** Fetched as a blob rather than linked directly: the PDF route needs
+   *  the Authorization header and the workspace header the interceptor
+   *  adds, which a plain <a href> would not carry. */
+  pdf: async (id: string): Promise<Blob> => {
+    const { data } = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' })
+    return data
+  },
+  share: async (id: string): Promise<InvoiceShareLink> => {
+    const { data } = await api.post(`/invoices/${id}/share`)
+    return data
+  },
+  unshare: async (id: string): Promise<void> => {
+    await api.delete(`/invoices/${id}/share`)
+  },
+}
+
+/** The shared invoice. Unauthenticated by design — the token is the whole
+ *  credential — so these bypass the api instance and its interceptors. */
+export const publicInvoices = {
+  get: async (token: string): Promise<InvoiceDocumentPayload> => {
+    // Bare axios, not the shared instance: the interceptors would attach
+    // an Authorization header and a workspace id, and this route must
+    // work for someone who has neither.
+    const { data } = await axios.get(`/api/public/invoices/${token}`)
+    return data
+  },
+  pdfUrl: (token: string): string => `/api/public/invoices/${token}/pdf`,
 }

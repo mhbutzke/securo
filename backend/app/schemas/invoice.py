@@ -136,6 +136,10 @@ class InvoiceRead(BaseModel):
     internal_notes: Optional[str]
     custom_fields: Optional[dict[str, Any]]
     snapshot: Optional[dict[str, Any]]
+    #: Present once the invoice has been issued: a link anyone holding it
+    #: can open. Null until someone asks for one, and null again once
+    #: revoked.
+    share_token: Optional[str] = None
     lines: list[InvoiceLineRead] = []
     allocations: list[InvoiceAllocationRead] = []
     created_at: datetime
@@ -167,6 +171,41 @@ class InvoiceSummary(BaseModel):
     upcoming: list[InvoiceRead] = []
 
 
+class IssuerTaxIdInput(BaseModel):
+    kind: str
+    value: str = Field(..., max_length=120)
+
+
+class IssuerTaxIdRead(BaseModel):
+    kind: str
+    value: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IssuerProfileRead(BaseModel):
+    """The workspace describing itself, as the issuer block on a document."""
+
+    legal_name: Optional[str]
+    address: Optional[str]
+    tax_jurisdiction: Optional[str]
+    tax_ids: list[IssuerTaxIdRead] = []
+
+
+class IssuerProfileUpdate(BaseModel):
+    legal_name: Optional[str] = Field(default=None, max_length=255)
+    address: Optional[str] = Field(default=None, max_length=500)
+    #: Omit to leave documents untouched; send a list to replace the set.
+    tax_ids: Optional[list[IssuerTaxIdInput]] = None
+
+
+class ShareLinkRead(BaseModel):
+    token: str
+    #: Path rather than an absolute URL: the server does not reliably know
+    #: the public origin behind a reverse proxy, and the frontend does.
+    path: str
+
+
 class InvoiceSettingsRead(BaseModel):
     preset: InvoicePreset
     document_required: bool
@@ -179,6 +218,8 @@ class InvoiceSettingsRead(BaseModel):
     logo_url: Optional[str]
     issuer_display_name: Optional[str]
     footer_note: Optional[str]
+    payment_details: Optional[str]
+    accent_color: Optional[str]
     template: Optional[dict[str, Any]]
 
     model_config = ConfigDict(from_attributes=True)
@@ -197,6 +238,11 @@ class InvoiceSettingsUpdate(BaseModel):
     logo_url: Optional[str] = Field(default=None, max_length=1000)
     issuer_display_name: Optional[str] = Field(default=None, max_length=255)
     footer_note: Optional[str] = None
+    #: Free text on purpose — a Pix key, an IBAN and a routing number have
+    #: nothing structural in common, and picking one shape would pick a
+    #: country.
+    payment_details: Optional[str] = None
+    accent_color: Optional[str] = Field(default=None, max_length=9)
     #: Labels and custom-field definitions. Free-form by design: adding a
     #: field a workspace needs must never be a database migration.
     template: Optional[dict[str, Any]] = None

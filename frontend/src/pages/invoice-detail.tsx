@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Link2, Unlink, Ban, CheckCircle2, Trash2, Send, RotateCcw } from 'lucide-react'
+import {
+  ArrowLeft, Link2, Unlink, Ban, CheckCircle2, Trash2, Send, RotateCcw,
+  Download, Share2, Copy, FileText, Check,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -21,6 +24,7 @@ import { formatCurrency } from '@/lib/format'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { invoices as invoicesApi, transactions as transactionsApi } from '@/lib/api'
+import { InvoiceDocumentView } from '@/components/invoice-document'
 import {
   STATE_TONE,
   availableActions,
@@ -48,6 +52,8 @@ export default function InvoiceDetailPage() {
   const locale = current?.locale ?? 'en'
 
   const [linkOpen, setLinkOpen] = useState(false)
+  const [tab, setTab] = useState<'details' | 'document'>('details')
+  const [copied, setCopied] = useState(false)
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoice', id],
@@ -57,6 +63,14 @@ export default function InvoiceDetailPage() {
   const { data: settings } = useQuery({
     queryKey: ['invoice-settings'],
     queryFn: invoicesApi.settings,
+  })
+  // Fetched only when the document tab is open: it resolves the snapshot
+  // and builds the whole page server-side, and the details tab has no
+  // use for any of it.
+  const { data: documentPayload } = useQuery({
+    queryKey: ['invoice-document', id],
+    queryFn: () => invoicesApi.document(id),
+    enabled: Boolean(id) && tab === 'document',
   })
 
   const refresh = () => {
@@ -109,6 +123,49 @@ export default function InvoiceDetailPage() {
   const money = (value: string | number | null | undefined, currency?: string) =>
     mask(formatCurrency(Number(value ?? 0), currency ?? invoice?.currency ?? 'USD', locale))
 
+  // Fetched as a blob rather than opened as a link: the PDF route needs
+  // the auth and workspace headers the axios interceptor adds, which a
+  // plain anchor would not carry.
+  const downloadMutation = useMutation({
+    mutationFn: async () => {
+      const blob = await invoicesApi.pdf(id)
+      const url = URL.createObjectURL(blob)
+      const anchor = window.document.createElement('a')
+      anchor.href = url
+      anchor.download = `${invoice?.number ?? 'invoice'}.pdf`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    },
+    onError,
+  })
+
+  const shareMutation = useMutation({
+    mutationFn: () => invoicesApi.share(id),
+    onSuccess: async (link) => {
+      const url = `${window.location.origin}${link.path}`
+      try {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2500)
+        toast.success(t('invoices.shareCopied'))
+      } catch {
+        // A blocked clipboard is not a failed share — the link exists.
+        toast.success(url)
+      }
+      refresh()
+    },
+    onError,
+  })
+
+  const unshareMutation = useMutation({
+    mutationFn: () => invoicesApi.unshare(id),
+    onSuccess: () => {
+      toast.success(t('invoices.shareRevoked'))
+      refresh()
+    },
+    onError,
+  })
+
   if (isLoading || !invoice) {
     return <div className="container max-w-4xl py-10 text-sm text-muted-foreground">{t('common.loading')}</div>
   }
@@ -130,6 +187,69 @@ export default function InvoiceDetailPage() {
         {t('invoices.backToList')}
       </button>
 
+      <div className="flex items-center gap-1 border-b">
+        {(['details', 'document'] as const).map((value) => (
+          <button
+            key={value}
+            onClick={() => setTab(value)}
+            data-testid={`invoice-tab-${value}`}
+            className={cn(
+              'px-3 py-2 text-sm border-b-2 -mb-px transition-colors',
+              tab === value
+                ? 'border-primary text-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {value === 'details' ? (
+              t('invoices.tab.details')
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                {t('invoices.tab.document')}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'document' ? (
+        <div className="space-y-4">
+          {invoice.share_token && (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs"
+              data-testid="invoice-share-banner"
+            >
+              <Share2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground">{t('invoices.shareActive')}</span>
+              <code className="truncate font-mono text-[11px]">
+                {`${window.location.origin}/i/${invoice.share_token}`}
+              </code>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2"
+                onClick={() => {
+                  void navigator.clipboard.writeText(
+                    `${window.location.origin}/i/${invoice.share_token}`,
+                  )
+                  toast.success(t('invoices.shareCopied'))
+                }}
+                data-testid="invoice-copy-link"
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+          {documentPayload ? (
+            <InvoiceDocumentView document={documentPayload} />
+          ) : (
+            <div className="rounded-xl border bg-card p-10 text-center text-sm text-muted-foreground">
+              {t('common.loading')}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
       <div className="rounded-xl border bg-card p-6 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
@@ -170,6 +290,45 @@ export default function InvoiceDetailPage() {
                   <Send className="h-4 w-4 mr-1.5" />
                   {t('invoices.action.issue')}
                 </Button>
+              )}
+              {invoice.status !== 'draft' && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => downloadMutation.mutate()}
+                    disabled={downloadMutation.isPending}
+                    data-testid="invoice-download-pdf"
+                  >
+                    <Download className="h-4 w-4 mr-1.5" />
+                    {t('invoices.action.downloadPdf')}
+                  </Button>
+                  {invoice.share_token ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => unshareMutation.mutate()}
+                      data-testid="invoice-unshare"
+                    >
+                      <Share2 className="h-4 w-4 mr-1.5" />
+                      {t('invoices.action.revokeLink')}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => shareMutation.mutate()}
+                      data-testid="invoice-share"
+                    >
+                      {copied ? (
+                        <Check className="h-4 w-4 mr-1.5" />
+                      ) : (
+                        <Share2 className="h-4 w-4 mr-1.5" />
+                      )}
+                      {t('invoices.action.share')}
+                    </Button>
+                  )}
+                </>
               )}
               {actions.canAllocate && (
                 <Button size="sm" onClick={() => setLinkOpen(true)} data-testid="invoice-link-payment">
@@ -335,6 +494,9 @@ export default function InvoiceDetailPage() {
           </ul>
         )}
       </div>
+
+      </>
+      )}
 
       <LinkPaymentDialog
         open={linkOpen}

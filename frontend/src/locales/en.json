@@ -177,7 +177,8 @@
       "due": "Due",
       "total": "Total",
       "balance": "Balance",
-      "state": "Status"
+      "state": "Status",
+      "quantity": "Quantity"
     },
     "summary": {
       "outstanding": "Outstanding",
@@ -194,7 +195,13 @@
       "notes": "Notes",
       "paid": "Received",
       "amountToApply": "Amount to apply",
-      "amountHint": "Leave blank to apply as much as fits."
+      "amountHint": "Leave blank to apply as much as fits.",
+      "lines": "Line items",
+      "addLine": "Add line",
+      "unitPrice": "Unit price",
+      "taxRate": "Tax rate",
+      "lineDescription": "Description",
+      "linesOptional": "Optional. Add them to turn this into a printable invoice."
     },
     "action": {
       "issue": "Issue",
@@ -203,7 +210,10 @@
       "writeOff": "Write off",
       "reopen": "Reopen",
       "unlink": "Unlink",
-      "link": "Link payment"
+      "link": "Link payment",
+      "downloadPdf": "Download PDF",
+      "share": "Share link",
+      "revokeLink": "Revoke link"
     },
     "settings": {
       "title": "Invoice settings",
@@ -219,7 +229,17 @@
       "logoUrl": "Logo URL",
       "logoHint": "Applies to invoices issued from now on. Documents already issued keep the logo they carried.",
       "footerNote": "Footer note",
-      "saved": "Settings saved"
+      "saved": "Settings saved",
+      "paymentDetails": "Payment details",
+      "paymentDetailsHint": "How the client pays you — a Pix key, an IBAN, a bank account. Shown on the document.",
+      "accentColor": "Accent colour",
+      "issuer": "Your business details",
+      "issuerHint": "Appears as the sender on every invoice you issue from now on.",
+      "legalName": "Legal name",
+      "addressLabel": "Address",
+      "labels": "Document labels",
+      "labelsHint": "Rename what the document calls each field.",
+      "saveIssuer": "Save details"
     },
     "errors": {
       "generic": "Something went wrong.",
@@ -241,9 +261,24 @@
       "terminal_status": "This invoice can no longer be edited.",
       "not_uncollectible": "Only an uncollectible invoice can be reopened.",
       "amount_not_positive": "The amount must be greater than zero.",
-      "allocation_not_found": "Payment link not found."
+      "allocation_not_found": "Payment link not found.",
+      "draft_not_shareable": "Issue the invoice before sharing it."
     },
-    "comingNext": "Bill your clients and keep track of what has been paid and what is still open. This is the next thing being built."
+    "comingNext": "Bill your clients and keep track of what has been paid and what is still open. This is the next thing being built.",
+    "document": {
+      "noLines": "This invoice has no line items — it records what is owed, and the document was issued elsewhere."
+    },
+    "tab": {
+      "details": "Details",
+      "document": "Document"
+    },
+    "shareCopied": "Link copied",
+    "shareRevoked": "Link revoked",
+    "shareActive": "Anyone with this link can view the invoice:",
+    "shared": {
+      "notFoundTitle": "Invoice not available",
+      "notFoundBody": "This link is no longer valid. Ask the sender for a new one."
+    }
   },
   "collections": {
     "title": "Collections",

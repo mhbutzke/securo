@@ -177,7 +177,8 @@
       "due": "Vencimento",
       "total": "Total",
       "balance": "Saldo",
-      "state": "Situação"
+      "state": "Situação",
+      "quantity": "Quantidade"
     },
     "summary": {
       "outstanding": "A receber",
@@ -194,7 +195,13 @@
       "notes": "Observações",
       "paid": "Recebido",
       "amountToApply": "Valor a aplicar",
-      "amountHint": "Deixe em branco para aplicar o que couber."
+      "amountHint": "Deixe em branco para aplicar o que couber.",
+      "lines": "Itens",
+      "addLine": "Adicionar item",
+      "unitPrice": "Valor unitário",
+      "taxRate": "Alíquota",
+      "lineDescription": "Descrição",
+      "linesOptional": "Opcional. Adicione para transformar isto numa fatura imprimível."
     },
     "action": {
       "issue": "Emitir",
@@ -203,7 +210,10 @@
       "writeOff": "Dar baixa como perda",
       "reopen": "Reabrir",
       "unlink": "Desvincular",
-      "link": "Vincular pagamento"
+      "link": "Vincular pagamento",
+      "downloadPdf": "Baixar PDF",
+      "share": "Compartilhar",
+      "revokeLink": "Revogar link"
     },
     "settings": {
       "title": "Configurações de cobrança",
@@ -219,7 +229,17 @@
       "logoUrl": "URL do logo",
       "logoHint": "Vale para as cobranças emitidas de agora em diante. As já emitidas mantêm o logo que levaram.",
       "footerNote": "Rodapé",
-      "saved": "Configurações salvas"
+      "saved": "Configurações salvas",
+      "paymentDetails": "Dados para pagamento",
+      "paymentDetailsHint": "Como o cliente paga você — chave Pix, IBAN, conta bancária. Aparece no documento.",
+      "accentColor": "Cor de destaque",
+      "issuer": "Dados do seu negócio",
+      "issuerHint": "Aparece como remetente nas cobranças emitidas de agora em diante.",
+      "legalName": "Razão social",
+      "addressLabel": "Endereço",
+      "labels": "Rótulos do documento",
+      "labelsHint": "Renomeie como o documento chama cada campo.",
+      "saveIssuer": "Salvar dados"
     },
     "errors": {
       "generic": "Algo deu errado.",
@@ -241,9 +261,24 @@
       "terminal_status": "Esta cobrança não pode mais ser editada.",
       "not_uncollectible": "Só uma cobrança incobrável pode ser reaberta.",
       "amount_not_positive": "O valor deve ser maior que zero.",
-      "allocation_not_found": "Vínculo não encontrado."
+      "allocation_not_found": "Vínculo não encontrado.",
+      "draft_not_shareable": "Emita a cobrança antes de compartilhar."
     },
-    "comingNext": "Cobre seus clientes e acompanhe o que já foi pago e o que continua em aberto. É a próxima coisa sendo construída."
+    "comingNext": "Cobre seus clientes e acompanhe o que já foi pago e o que continua em aberto. É a próxima coisa sendo construída.",
+    "document": {
+      "noLines": "Esta cobrança não tem itens — ela registra o que é devido, e o documento foi emitido em outro lugar."
+    },
+    "tab": {
+      "details": "Detalhes",
+      "document": "Documento"
+    },
+    "shareCopied": "Link copiado",
+    "shareRevoked": "Link revogado",
+    "shareActive": "Qualquer pessoa com este link vê a cobrança:",
+    "shared": {
+      "notFoundTitle": "Cobrança indisponível",
+      "notFoundBody": "Este link não vale mais. Peça um novo a quem enviou."
+    }
   },
   "collections": {
     "title": "Coleções",

@@ -1063,6 +1063,9 @@ export interface Invoice {
    *  Rendered instead of live settings so changing a logo never rewrites
    *  a document the client already received. */
   snapshot: Record<string, any> | null
+  /** Present once a shareable link exists. Null until someone asks for
+   *  one, and null again once revoked. */
+  share_token: string | null
   lines: InvoiceLine[]
   allocations: InvoiceAllocation[]
   created_at: string
@@ -1110,5 +1113,76 @@ export interface InvoiceSettings {
   logo_url: string | null
   issuer_display_name: string | null
   footer_note: string | null
+  /** Free text: a Pix key, an IBAN, a routing number. Shown on the
+   *  document; never parsed. */
+  payment_details: string | null
+  accent_color: string | null
   template: InvoiceTemplate | null
+}
+
+/** The invoice resolved into a document: what the PDF prints and what the
+ *  preview shows, from one definition on the server. Nothing here is
+ *  recomputed on this side — a second implementation is how the two
+ *  would come to disagree. */
+export interface InvoiceDocumentParty {
+  name: string | null
+  legal_name?: string | null
+  address: string | null
+  email?: string | null
+  /** Already masked server-side, because the PDF has no frontend to ask. */
+  tax_ids: { label: string; value: string }[]
+}
+
+export interface InvoiceDocumentLine {
+  description: string
+  quantity: string
+  unit_price: string
+  total: string
+  tax_rate: string | null
+}
+
+export interface InvoiceDocumentPayload {
+  number: string | null
+  status: InvoiceStatus
+  state: InvoiceState
+  issue_date: string
+  due_date: string
+  currency: string
+  subtotal: string
+  discount: string
+  tax_total: string
+  total: string
+  amount_paid: string
+  balance: string
+  issuer: InvoiceDocumentParty
+  client: InvoiceDocumentParty
+  lines: InvoiceDocumentLine[]
+  labels: Record<string, string>
+  accent_color: string
+  logo_url: string | null
+  payment_details: string | null
+  notes: string | null
+  footer_note: string | null
+  custom_fields: { label: string; value: string }[]
+  /** False when the invoice is only tracking money — the common case
+   *  where the fiscal document was issued somewhere else entirely. */
+  has_line_items: boolean
+}
+
+export interface IssuerTaxId {
+  kind: string
+  value: string
+}
+
+export interface IssuerProfile {
+  legal_name: string | null
+  address: string | null
+  tax_jurisdiction: string | null
+  tax_ids: IssuerTaxId[]
+}
+
+export interface InvoiceShareLink {
+  token: string
+  /** A path, not a URL: only the browser reliably knows the public origin. */
+  path: string
 }

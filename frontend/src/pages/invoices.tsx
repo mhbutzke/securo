@@ -29,14 +29,16 @@ import { formatCurrency } from '@/lib/format'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-import { invoices as invoicesApi, payees as payeesApi } from '@/lib/api'
+import { fiscal as fiscalApi, invoices as invoicesApi, payees as payeesApi } from '@/lib/api'
+import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import {
   STATE_TONE,
   customFieldDefs,
   displayNumber,
   invoiceErrorKey,
+  linesTotal,
 } from '@/lib/invoice-utils'
-import type { Invoice, InvoiceState } from '@/types'
+import type { Invoice, InvoiceLineInput, InvoiceState, IssuerTaxId } from '@/types'
 
 /**
  * The receivables screen: what is owed, what is late, and what landed.
@@ -313,14 +315,19 @@ function CreateInvoiceDialog({
   const [dueDate, setDueDate] = useState('')
   const [notes, setNotes] = useState('')
   const [custom, setCustom] = useState<Record<string, string>>({})
+  const [lines, setLines] = useState<InvoiceLineInput[]>([])
 
   const defs = customFieldDefs(settings?.template)
+  const { user } = useAuth()
+  const currencyCode = user?.preferences?.currency_display ?? 'USD'
 
   const mutation = useMutation({
     mutationFn: () =>
       invoicesApi.create({
         payee_id: payeeId || null,
-        total,
+        // Lines are the source of truth once they exist: the server
+        // recomputes the total from them and ignores what was typed.
+        ...(lines.length ? { lines } : { total }),
         ...(dueDate ? { due_date: dueDate } : {}),
         notes: notes || null,
         ...(Object.keys(custom).length ? { custom_fields: custom } : {}),
@@ -333,6 +340,7 @@ function CreateInvoiceDialog({
       setDueDate('')
       setNotes('')
       setCustom({})
+      setLines([])
       onCreated(invoice)
     },
     onError: (error) => {
@@ -375,8 +383,10 @@ function CreateInvoiceDialog({
                 id="invoice-total"
                 data-testid="invoice-total-input"
                 inputMode="decimal"
-                value={total}
+                value={lines.length ? linesTotal(lines).toFixed(2) : total}
                 onChange={(e) => setTotal(e.target.value)}
+                // Derived once lines exist, so the two can never disagree.
+                disabled={lines.length > 0}
                 placeholder="0.00"
               />
             </div>
@@ -407,6 +417,17 @@ function CreateInvoiceDialog({
             </div>
           ))}
 
+          <InvoiceLineEditor
+            lines={lines}
+            onChange={setLines}
+            currency={currencyCode}
+            showTax={(settings?.tax_fields ?? 'hidden') !== 'hidden'}
+            // Under the document preset the server requires line items,
+            // so the editor opens with an empty row rather than letting
+            // the user discover the rule from a rejected submit.
+            required={settings?.document_required ?? false}
+          />
+
           <div className="space-y-1.5">
             <Label htmlFor="invoice-notes">{t('invoices.field.notes')}</Label>
             <Input
@@ -424,7 +445,7 @@ function CreateInvoiceDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!total || mutation.isPending}
+            disabled={(lines.length ? linesTotal(lines) <= 0 : !total) || mutation.isPending}
             data-testid="invoice-create-submit"
           >
             {t('common.create')}
@@ -547,6 +568,37 @@ function InvoiceSettingsDialog({
           </div>
 
           <div className="space-y-1.5">
+            <Label htmlFor="settings-payment">{t('invoices.settings.paymentDetails')}</Label>
+            <Input
+              id="settings-payment"
+              data-testid="invoice-payment-details-input"
+              value={String(value('payment_details') ?? '')}
+              onChange={(e) => setDraft({ ...draft, payment_details: e.target.value })}
+              placeholder="Pix: …"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {t('invoices.settings.paymentDetailsHint')}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="settings-accent">{t('invoices.settings.accentColor')}</Label>
+            <div className="flex items-center gap-2">
+              <input
+                id="settings-accent"
+                type="color"
+                data-testid="invoice-accent-input"
+                className="h-9 w-12 rounded border bg-transparent p-1"
+                value={String(value('accent_color') ?? '#111827')}
+                onChange={(e) => setDraft({ ...draft, accent_color: e.target.value })}
+              />
+              <span className="font-mono text-xs text-muted-foreground">
+                {String(value('accent_color') ?? '#111827')}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="settings-footer">{t('invoices.settings.footerNote')}</Label>
             <Input
               id="settings-footer"
@@ -555,6 +607,8 @@ function InvoiceSettingsDialog({
               onChange={(e) => setDraft({ ...draft, footer_note: e.target.value })}
             />
           </div>
+
+          <IssuerSection />
         </div>
 
         <DialogFooter>
@@ -571,5 +625,96 @@ function InvoiceSettingsDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * The workspace describing itself: what appears as the sender on every
+ * document issued from now on.
+ *
+ * Which fiscal documents are offered comes from the workspace's own
+ * jurisdiction pack, so a Brazilian workspace is asked for a CNPJ and a
+ * German one for a VAT number without this component knowing either
+ * exists. It also never *restricts* the choice — a company can hold a
+ * document its country's pack never anticipated.
+ */
+function IssuerSection() {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const { data: issuer } = useQuery({ queryKey: ['invoice-issuer'], queryFn: invoicesApi.issuer })
+  const { data: kinds } = useQuery({ queryKey: ['tax-id-kinds'], queryFn: fiscalApi.taxIdKinds })
+
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [docs, setDocs] = useState<IssuerTaxId[] | null>(null)
+
+  const rows = docs ?? issuer?.tax_ids ?? []
+  const offered = (kinds?.kinds ?? []).filter((k) => k.offered)
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      invoicesApi.updateIssuer({
+        ...(draft.legal_name !== undefined ? { legal_name: draft.legal_name } : {}),
+        ...(draft.address !== undefined ? { address: draft.address } : {}),
+        ...(docs ? { tax_ids: docs.filter((d) => d.value.trim()) } : {}),
+      }),
+    onSuccess: () => {
+      toast.success(t('invoices.settings.saved'))
+      void queryClient.invalidateQueries({ queryKey: ['invoice-issuer'] })
+      setDraft({})
+      setDocs(null)
+    },
+    onError: (error) => {
+      const key = invoiceErrorKey(error)
+      toast.error(key ? t(key, t('invoices.errors.generic')) : t('invoices.errors.generic'))
+    },
+  })
+
+  return (
+    <div className="border-t pt-4 space-y-3" data-testid="invoice-issuer-section">
+      <div>
+        <Label>{t('invoices.settings.issuer')}</Label>
+        <p className="text-[11px] text-muted-foreground">{t('invoices.settings.issuerHint')}</p>
+      </div>
+
+      <Input
+        data-testid="issuer-legal-name"
+        placeholder={t('invoices.settings.legalName')}
+        value={draft.legal_name ?? issuer?.legal_name ?? ''}
+        onChange={(e) => setDraft({ ...draft, legal_name: e.target.value })}
+      />
+      <Input
+        data-testid="issuer-address"
+        placeholder={t('invoices.settings.addressLabel')}
+        value={draft.address ?? issuer?.address ?? ''}
+        onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+      />
+
+      {offered.map((kind) => {
+        const existing = rows.find((r) => r.kind === kind.kind)
+        return (
+          <Input
+            key={kind.kind}
+            data-testid={`issuer-tax-${kind.kind}`}
+            placeholder={t(kind.label_key, kind.kind.toUpperCase())}
+            value={existing?.value ?? ''}
+            onChange={(e) => {
+              const next = rows.filter((r) => r.kind !== kind.kind)
+              if (e.target.value.trim()) next.push({ kind: kind.kind, value: e.target.value })
+              setDocs(next)
+            }}
+          />
+        )
+      })}
+
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => mutation.mutate()}
+        disabled={mutation.isPending || (Object.keys(draft).length === 0 && docs === null)}
+        data-testid="issuer-save"
+      >
+        {t('invoices.settings.saveIssuer')}
+      </Button>
+    </div>
   )
 }

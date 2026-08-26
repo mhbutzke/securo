@@ -42,6 +42,7 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     internal_notes: null,
     custom_fields: null,
     snapshot: null,
+    share_token: null,
     lines: [],
     allocations: [],
     created_at: '2026-08-01T00:00:00Z',

@@ -11,10 +11,11 @@ import uuid
 from datetime import date as _date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.workspace import Workspace
 from app.core.module_gate import require_module, require_module_write
 from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import (
@@ -25,8 +26,11 @@ from app.schemas.invoice import (
     InvoiceSettingsUpdate,
     InvoiceSummary,
     InvoiceUpdate,
+    IssuerProfileRead,
+    IssuerProfileUpdate,
+    ShareLinkRead,
 )
-from app.services import invoice_service
+from app.services import invoice_document, invoice_pdf, invoice_service
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
 
@@ -98,6 +102,56 @@ async def read_summary(
     data = await invoice_service.aging_summary(session, ctx.workspace.id)
     data["upcoming"] = [_serialize(inv) for inv in data["upcoming"]]
     return data
+
+
+# ---------------------------------------------------------------------------
+# Issuer identity — the workspace describing itself (T10)
+# ---------------------------------------------------------------------------
+@router.get("/issuer", response_model=IssuerProfileRead)
+async def read_issuer(
+    ctx: WorkspaceContext = Depends(read_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    tax_ids = await invoice_service.get_issuer_tax_ids(session, ctx.workspace.id)
+    return IssuerProfileRead(
+        legal_name=ctx.workspace.legal_name,
+        address=ctx.workspace.address,
+        tax_jurisdiction=ctx.workspace.tax_jurisdiction,
+        tax_ids=tax_ids,
+    )
+
+
+@router.patch("/issuer", response_model=IssuerProfileRead)
+async def write_issuer(
+    payload: IssuerProfileUpdate,
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    # The context's workspace is already attached to this session; fetching
+    # it again would only add a query and a `| None` to reason about.
+    workspace = ctx.workspace
+    data = payload.model_dump(exclude_unset=True)
+    # Blankable on purpose: clearing a legal name is a thing people do.
+    for field in ("legal_name", "address"):
+        if field in data:
+            setattr(workspace, field, data[field])
+    tax_ids = None
+    if data.get("tax_ids") is not None:
+        try:
+            tax_ids = await invoice_service.set_issuer_tax_ids(
+                session, ctx.workspace.id, [dict(t) for t in data["tax_ids"]]
+            )
+        except InvoiceError as exc:
+            raise _http(exc)
+    await session.commit()
+    if tax_ids is None:
+        tax_ids = await invoice_service.get_issuer_tax_ids(session, ctx.workspace.id)
+    return IssuerProfileRead(
+        legal_name=workspace.legal_name,
+        address=workspace.address,
+        tax_jurisdiction=workspace.tax_jurisdiction,
+        tax_ids=tax_ids,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,3 +332,70 @@ async def remove_allocation(
         raise _http(exc)
     await session.commit()
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
+
+
+# ---------------------------------------------------------------------------
+# The rendered document
+# ---------------------------------------------------------------------------
+async def _document(session: AsyncSession, invoice, workspace: Workspace):
+    settings = await invoice_service.get_settings(session, workspace.id)
+    return await invoice_document.build_document(session, invoice, settings, workspace)
+
+
+@router.get("/{invoice_id}/document")
+async def read_document(
+    invoice_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(read_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The invoice as a document, resolved.
+
+    The same structure the PDF renderer consumes, so the preview on
+    screen and the file the client receives cannot disagree.
+    """
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    document = await _document(session, invoice, ctx.workspace)
+    return invoice_document.document_payload(document)
+
+
+@router.get("/{invoice_id}/pdf")
+async def download_pdf(
+    invoice_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(read_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    document = await _document(session, invoice, ctx.workspace)
+    pdf = invoice_pdf.render_pdf(document)
+    filename = f"{document.number or 'draft'}.pdf".replace("/", "-")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{invoice_id}/share", response_model=ShareLinkRead, status_code=status.HTTP_201_CREATED)
+async def create_share_link(
+    invoice_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    try:
+        token = await invoice_service.create_share_token(session, invoice)
+    except InvoiceError as exc:
+        raise _http(exc)
+    await session.commit()
+    return ShareLinkRead(token=token, path=f"/i/{token}")
+
+
+@router.delete("/{invoice_id}/share", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_share_link(
+    invoice_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    await invoice_service.revoke_share_token(session, invoice)
+    await session.commit()

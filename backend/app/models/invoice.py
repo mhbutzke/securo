@@ -190,6 +190,10 @@ class Invoice(Base):
     # settings, so a new field is a settings edit and never a migration.
     custom_fields: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # Null until someone asks for a shareable link, and nulled again to
+    # revoke one. Unique so the public lookup is a single indexed read.
+    share_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -351,6 +355,13 @@ class InvoiceSettings(Base):
     logo_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     issuer_display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     footer_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Free text, deliberately. A Brazilian writes a Pix key, a German an
+    # IBAN and a BIC, an American a routing number — structuring this
+    # would bake one country's shape into the schema.
+    payment_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # The one visual knob worth having: a document that carries the
+    # sender's colour reads as theirs rather than as the tool's.
+    accent_color: Mapped[Optional[str]] = mapped_column(String(9), nullable=True)
 
     # Labels and custom-field definitions. One jsonb rather than a column
     # per label: peers ship twenty columns for this and pay a migration

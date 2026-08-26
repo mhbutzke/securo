@@ -37,6 +37,7 @@ const AgentDetailPage = lazy(() => import('@/pages/agent-detail'))
 const AgentConnectionsPage = lazy(() => import('@/pages/agent-connections'))
 const InvoicesPage = lazy(() => import('@/pages/invoices'))
 const InvoiceDetailPage = lazy(() => import('@/pages/invoice-detail'))
+const SharedInvoicePage = lazy(() => import('@/pages/shared-invoice'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
 const OIDCCallbackPage = lazy(() => import('@/pages/oidc-callback'))
@@ -71,6 +72,11 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                {/* A client opening a link the sender shared. Deliberately
+                    outside ProtectedRoute and outside AppLayout: the
+                    recipient has no account, and the token is the whole
+                    credential. */}
+                <Route path="/i/:token" element={<SharedInvoicePage />} />
                 <Route
                   element={
                     <ProtectedRoute>
