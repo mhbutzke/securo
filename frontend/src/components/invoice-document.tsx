@@ -32,6 +32,19 @@ const INK = '#18181b'
 const MUTED = '#71717a'
 const RULE = '#e4e4e7'
 
+/**
+ * A4 at 96dpi, and the same 18mm margin the PDF renderer uses.
+ *
+ * The point is proportion, not pixel-accuracy: a sheet that is merely
+ * "a wide card" reads as a web page, and the whole reason to preview a
+ * document is to see the shape of the thing the client will hold. The
+ * page keeps its full height even when the invoice is two lines long,
+ * because that is what a real page does.
+ */
+const SHEET_WIDTH = 794
+const SHEET_HEIGHT = 1123
+const SHEET_MARGIN = 68
+
 function Party({
   title,
   name,
@@ -135,11 +148,20 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
 
   return (
     // The desk: a recessed surface that makes the sheet read as paper.
-    <div className="rounded-xl border border-border bg-muted/50 p-4 sm:p-8">
+    <div className="rounded-xl border border-border bg-muted/50 p-3 sm:p-8 overflow-x-auto">
       <div
         data-testid="invoice-document"
-        className="mx-auto max-w-[720px] rounded-lg bg-white px-8 py-9 sm:px-12 sm:py-12 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_-8px_rgba(0,0,0,0.18)]"
-        style={{ color: INK }}
+        className="mx-auto flex flex-col rounded-sm bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_12px_32px_-10px_rgba(0,0,0,0.22)]"
+        style={{
+          color: INK,
+          width: '100%',
+          maxWidth: SHEET_WIDTH,
+          // Full page height from the small breakpoint up. On a phone a
+          // sheet taller than the screen is theatre, so it collapses to
+          // its content there.
+          minHeight: `min(${SHEET_HEIGHT}px, 141.4vw)`,
+          padding: `clamp(28px, 8.5vw, ${SHEET_MARGIN}px)`,
+        }}
       >
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -278,8 +300,12 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
           </dl>
         </div>
 
+        {/* Everything above is the body; from here down is the footer
+            band, pushed to the foot of the page by `mt-auto` so it lands
+            where the PDF pins it and where a reader looks for it. */}
+        <div className="mt-auto pt-10">
         {(document.payment_details || document.notes) && (
-          <div className="mt-9 grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-2">
             {document.payment_details && (
               <div>
                 <div
@@ -311,12 +337,13 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
 
         {document.footer_note && (
           <p
-            className="mt-10 pt-4 text-[11.5px] leading-relaxed"
+            className="mt-6 pt-4 text-[11.5px] leading-relaxed"
             style={{ borderTop: `1px solid ${RULE}`, color: MUTED }}
           >
             {document.footer_note}
           </p>
         )}
+        </div>
       </div>
     </div>
   )

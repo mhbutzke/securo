@@ -500,3 +500,131 @@ class TestIssuerProfile:
         assert (
             await client.patch("/api/invoices/issuer", headers=headers, json={"legal_name": "x"})
         ).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Page structure — the band layout and its pagination
+# ---------------------------------------------------------------------------
+def _doc(n_lines: int, footer_note: str = "Alpha ME"):
+    """A document with `n_lines` items, for exercising page breaks.
+
+    Built field by field rather than from a dict: keyword-splatting a
+    heterogeneous mapping loses every type on the way in, and this is the
+    one fixture the PDF tests all lean on.
+    """
+    from app.services.invoice_document import (
+        DEFAULT_LABELS, DocumentLine, DocumentParty, InvoiceDocument,
+    )
+
+    return InvoiceDocument(
+        number="FAT-7",
+        status="open",
+        state="open",
+        issue_date=date(2026, 8, 26),
+        due_date=date(2026, 9, 20),
+        currency="BRL",
+        subtotal=Decimal("1200"),
+        discount=Decimal("0"),
+        tax_total=Decimal("0"),
+        total=Decimal("1200"),
+        amount_paid=Decimal("0"),
+        balance=Decimal("1200"),
+        issuer=DocumentParty(name="Alpha ME", tax_ids=[]),
+        client=DocumentParty(name="Beta LTDA", address=None, tax_ids=[]),
+        lines=[
+            DocumentLine(f"Item {i + 1}", Decimal("1"), Decimal("100"), Decimal("100"))
+            for i in range(n_lines)
+        ],
+        labels=dict(DEFAULT_LABELS),
+        accent_color="#4f46e5",
+        logo_url=None,
+        payment_details="Pix: alpha@exemplo.com",
+        notes="Obrigado.",
+        footer_note=footer_note,
+        custom_fields=[],
+        has_line_items=n_lines > 0,
+    )
+
+
+def _pages(document):
+    import io
+
+    import pypdf
+
+    return pypdf.PdfReader(io.BytesIO(invoice_pdf.render_pdf(document))).pages
+
+
+class TestPageStructure:
+    def test_a_short_invoice_is_one_page(self):
+        assert len(_pages(_doc(3))) == 1
+
+    def test_a_long_invoice_paginates_instead_of_overflowing(self):
+        """The regression this exists for.
+
+        The renderer used to draw one page and let anything taller run off
+        the bottom edge, where the line items were still in the file and
+        invisible to every human who opened it.
+        """
+        pages = _pages(_doc(45))
+        assert len(pages) > 1
+
+    def test_no_line_item_is_lost_across_the_break(self):
+        n = 45
+        pages = _pages(_doc(n))
+        text = "\n".join(p.extract_text() for p in pages)
+        for i in range(n):
+            assert f"Item {i + 1}" in text, f"line {i + 1} vanished"
+
+    def test_every_page_identifies_the_document(self):
+        """Someone holding page 3 has to know what it belongs to."""
+        for page in _pages(_doc(45)):
+            text = page.extract_text()
+            assert "FAT-7" in text
+
+    def test_the_payment_band_lands_on_the_last_page_only(self):
+        pages = _pages(_doc(45))
+        texts = [p.extract_text() for p in pages]
+        assert "Pix: alpha@exemplo.com" in texts[-1]
+        for text in texts[:-1]:
+            assert "Pix: alpha@exemplo.com" not in text
+
+    def test_totals_land_on_the_last_page_with_the_final_items(self):
+        texts = [p.extract_text() for p in _pages(_doc(45))]
+        assert "Item 45" in texts[-1]
+        assert "1,200.00" in texts[-1]
+
+    def test_page_numbers_appear_only_when_there_is_more_than_one(self):
+        """"1 / 1" on a single-page invoice is noise that makes the
+        document look machine-made."""
+        single = _pages(_doc(3))[0].extract_text()
+        assert "/ 1" not in single
+
+        multi = _pages(_doc(45))
+        assert f"/ {len(multi)}" in multi[-1].extract_text()
+
+    def test_the_payment_band_sits_below_the_totals_on_the_page(self):
+        """Position, not just presence: "how to pay me" halfway up an
+        otherwise empty page is the layout this replaced."""
+        import io
+
+        import pypdf
+
+        positions: dict[str, float] = {}
+
+        def visitor(text, _cm, tm, *_args):
+            stripped = text.strip()
+            for needle in ("Total", "PAYMENT DETAILS"):
+                if stripped.startswith(needle) and needle not in positions:
+                    positions[needle] = tm[5]
+
+        page = pypdf.PdfReader(io.BytesIO(invoice_pdf.render_pdf(_doc(3)))).pages[0]
+        page.extract_text(visitor_text=visitor)
+
+        assert "Total" in positions and "PAYMENT DETAILS" in positions
+        # PDF y grows upward, so lower on the page is a smaller number.
+        assert positions["PAYMENT DETAILS"] < positions["Total"]
+
+    def test_an_invoice_with_no_lines_still_renders_the_bands(self):
+        page = _pages(_doc(0))[0].extract_text()
+        assert "Beta LTDA" in page
+        assert "Pix: alpha@exemplo.com" in page
