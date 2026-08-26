@@ -184,7 +184,11 @@
       "outstanding": "Outstanding",
       "overdue": "Overdue",
       "receivedThisMonth": "Received this month",
-      "upcoming": "Due soon"
+      "upcoming": "Due soon",
+      "aging": "By age",
+      "nothingDue": "Nothing outstanding.",
+      "overdueCount_one": "on {{count}} invoice",
+      "overdueCount_other": "on {{count}} invoices"
     },
     "field": {
       "client": "Client",
@@ -278,7 +282,19 @@
     "shared": {
       "notFoundTitle": "Invoice not available",
       "notFoundBody": "This link is no longer valid. Ask the sender for a new one."
-    }
+    },
+    "section": "Business",
+    "emptyFiltered": "Nothing matches this filter.",
+    "detailsTitle": "Details",
+    "shareCopy": "Copy link",
+    "bucket": {
+      "current": "Not due yet",
+      "d1_30": "1–30 days late",
+      "d31_60": "31–60 days late",
+      "d61_90": "61–90 days late",
+      "d90_plus": "90+ days late"
+    },
+    "moreActions": "More actions"
   },
   "collections": {
     "title": "Колекції",

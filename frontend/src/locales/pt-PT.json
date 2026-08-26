@@ -184,7 +184,11 @@
       "outstanding": "A receber",
       "overdue": "Vencido",
       "receivedThisMonth": "Recebido no mês",
-      "upcoming": "A vencer"
+      "upcoming": "A vencer",
+      "aging": "Por idade",
+      "nothingDue": "Nada a receber.",
+      "overdueCount_one": "em {{count}} cobrança",
+      "overdueCount_other": "em {{count}} cobranças"
     },
     "field": {
       "client": "Cliente",
@@ -278,7 +282,19 @@
     "shared": {
       "notFoundTitle": "Cobrança indisponível",
       "notFoundBody": "Este link não vale mais. Peça um novo a quem enviou."
-    }
+    },
+    "section": "Negócio",
+    "emptyFiltered": "Nada corresponde a este filtro.",
+    "detailsTitle": "Detalhes",
+    "shareCopy": "Copiar link",
+    "bucket": {
+      "current": "A vencer",
+      "d1_30": "1–30 dias",
+      "d31_60": "31–60 dias",
+      "d61_90": "61–90 dias",
+      "d90_plus": "90+ dias"
+    },
+    "moreActions": "Mais ações"
   },
   "collections": {
     "title": "Coleções",

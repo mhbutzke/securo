@@ -1,30 +1,36 @@
 import { useTranslation } from 'react-i18next'
+import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
+import { formatCurrency } from '@/lib/format'
 import type { InvoiceDocumentPayload } from '@/types'
 
 /**
- * The invoice as a document, on screen.
+ * The invoice as a document.
+ *
+ * Deliberately not a Securo card. This is the artifact the client
+ * receives: a sheet of paper, presented on a recessed surface so it
+ * reads as paper on a desk rather than as a panel that forgot the
+ * theme. It is light in both themes because the printed thing is light
+ * in both themes, and the inset around it is what makes that a decision
+ * instead of a bug.
  *
  * A deliberate mirror of `services/invoice_pdf.py`: same blocks, same
- * order, same labels. It recomputes nothing — every value here was
- * resolved by the server into one structure that both renderers read, so
- * "what the client will receive" and "what I am looking at" cannot drift
- * apart into two opinions.
+ * order, same labels. It recomputes nothing — every value was resolved
+ * by the server into one structure both renderers read, so the preview
+ * and the file cannot drift apart into two opinions.
  *
  * Labels come from the document rather than from i18n. That reads
  * backwards until you remember whose document it is: the sender chose
- * these words, possibly in their client's language, and translating them
- * into the *viewer's* language would rewrite someone else's invoice.
- * Page chrome around it stays translated; the document does not.
+ * these words, possibly in their client's language, and translating
+ * them into the *viewer's* language would rewrite someone else's
+ * invoice. The chrome around the sheet stays translated; the sheet
+ * does not.
  */
 
-function money(amount: string, currency: string): string {
-  const value = Number(amount)
-  if (!Number.isFinite(value)) return `${currency} ${amount}`
-  return `${currency} ${value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
-}
+/** Ink, fixed. The sheet does not follow the app theme, so its colours
+ *  cannot come from theme tokens. */
+const INK = '#18181b'
+const MUTED = '#71717a'
+const RULE = '#e4e4e7'
 
 function Party({
   title,
@@ -43,215 +49,275 @@ function Party({
 }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <div
+        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+        style={{ color: MUTED }}
+      >
         {title}
       </div>
-      {name && <div className="mt-1.5 font-semibold text-[15px] break-words">{name}</div>}
+      {name && (
+        <div className="mt-1.5 text-[15px] font-semibold leading-snug break-words">{name}</div>
+      )}
       {/* Only when it differs — printing the same string twice reads as a bug. */}
       {legalName && legalName !== name && (
-        <div className="text-sm text-muted-foreground break-words">{legalName}</div>
+        <div className="text-[13px] leading-relaxed break-words" style={{ color: MUTED }}>
+          {legalName}
+        </div>
       )}
       {taxIds.map((doc) => (
-        <div key={`${doc.label}-${doc.value}`} className="text-sm text-muted-foreground">
+        <div
+          key={`${doc.label}-${doc.value}`}
+          className="text-[13px] leading-relaxed tabular-nums"
+          style={{ color: MUTED }}
+        >
           {doc.label} {doc.value}
         </div>
       ))}
       {address && (
-        <div className="text-sm text-muted-foreground whitespace-pre-line break-words">
+        <div
+          className="text-[13px] leading-relaxed whitespace-pre-line break-words"
+          style={{ color: MUTED }}
+        >
           {address}
         </div>
       )}
-      {email && <div className="text-sm text-muted-foreground break-all">{email}</div>}
+      {email && (
+        <div className="text-[13px] leading-relaxed break-all" style={{ color: MUTED }}>
+          {email}
+        </div>
+      )}
     </div>
   )
 }
 
-export function InvoiceDocumentView({
-  document,
-  className = '',
-}: {
-  document: InvoiceDocumentPayload
-  className?: string
-}) {
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+        style={{ color: MUTED }}
+      >
+        {label}
+      </div>
+      <div className="mt-0.5 text-[13px] tabular-nums">{value}</div>
+    </div>
+  )
+}
+
+export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPayload }) {
   const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const dateLocale = useDateLocale()
   const L = document.labels
   const accent = document.accent_color
-  const currency = document.currency
   const hasPaid = Number(document.amount_paid) > 0
+
+  const money = (value: string) => formatCurrency(Number(value), document.currency, locale)
+  const showDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
 
   const totals: { label: string; value: string; strong?: boolean }[] = []
   if (document.lines.length > 0) {
-    totals.push({ label: L.subtotal, value: money(document.subtotal, currency) })
+    totals.push({ label: L.subtotal, value: money(document.subtotal) })
   }
   if (Number(document.discount) > 0) {
-    totals.push({ label: L.discount, value: `-${money(document.discount, currency)}` })
+    totals.push({ label: L.discount, value: `-${money(document.discount)}` })
   }
   if (Number(document.tax_total) > 0) {
-    totals.push({ label: L.tax, value: money(document.tax_total, currency) })
+    totals.push({ label: L.tax, value: money(document.tax_total) })
   }
-  totals.push({ label: L.total, value: money(document.total, currency), strong: true })
+  totals.push({ label: L.total, value: money(document.total), strong: true })
   // Paid and balance only once money has moved: on an untouched invoice
   // they restate the total twice and add nothing.
   if (hasPaid) {
-    totals.push({ label: L.paid, value: money(document.amount_paid, currency) })
-    totals.push({ label: L.balance, value: money(document.balance, currency), strong: true })
+    totals.push({ label: L.paid, value: money(document.amount_paid) })
+    totals.push({ label: L.balance, value: money(document.balance), strong: true })
   }
 
   return (
-    <div
-      data-testid="invoice-document"
-      className={`bg-white text-neutral-900 rounded-xl border shadow-sm p-8 sm:p-10 ${className}`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          {document.logo_url && (
-            <img
-              src={document.logo_url}
-              alt=""
-              className="h-10 w-auto max-w-[140px] object-contain"
-              data-testid="document-logo"
-            />
-          )}
-          <h2 className="text-2xl font-bold tracking-tight">{L.invoice}</h2>
-        </div>
-        {document.number && (
-          <div
-            className="text-lg font-bold tabular-nums"
-            style={{ color: accent }}
-            data-testid="document-number"
-          >
-            {document.number}
+    // The desk: a recessed surface that makes the sheet read as paper.
+    <div className="rounded-xl border border-border bg-muted/50 p-4 sm:p-8">
+      <div
+        data-testid="invoice-document"
+        className="mx-auto max-w-[720px] rounded-lg bg-white px-8 py-9 sm:px-12 sm:py-12 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_-8px_rgba(0,0,0,0.18)]"
+        style={{ color: INK }}
+      >
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            {document.logo_url && (
+              <img
+                src={document.logo_url}
+                alt=""
+                className="h-9 w-auto max-w-[132px] object-contain"
+                data-testid="document-logo"
+              />
+            )}
+            <h2 className="text-[26px] font-bold tracking-tight leading-none">{L.invoice}</h2>
           </div>
-        )}
-      </div>
-
-      <div className="mt-3 h-[2px] rounded-full" style={{ backgroundColor: accent }} />
-
-      <div className="mt-6 grid gap-6 sm:grid-cols-2">
-        <Party
-          title={L.from}
-          name={document.issuer.name}
-          legalName={document.issuer.legal_name}
-          address={document.issuer.address}
-          taxIds={document.issuer.tax_ids}
-        />
-        <Party
-          title={L.billTo}
-          name={document.client.name}
-          address={document.client.address}
-          email={document.client.email}
-          taxIds={document.client.tax_ids}
-        />
-      </div>
-
-      <div className="mt-6 flex flex-wrap gap-x-10 gap-y-3">
-        {[
-          { label: L.issueDate, value: document.issue_date },
-          { label: L.dueDate, value: document.due_date },
-          ...document.custom_fields,
-        ].map((field) => (
-          <div key={`${field.label}-${field.value}`}>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              {field.label}
+          {document.number && (
+            <div
+              className="text-[17px] font-bold tabular-nums leading-none pt-1"
+              style={{ color: accent }}
+              data-testid="document-number"
+            >
+              {document.number}
             </div>
-            <div className="text-sm tabular-nums">{field.value}</div>
-          </div>
-        ))}
-      </div>
+          )}
+        </header>
 
-      {document.lines.length > 0 ? (
-        <div className="mt-7 overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="mt-4 h-[2px] rounded-full" style={{ backgroundColor: accent }} />
+
+        <div className="mt-8 grid gap-8 sm:grid-cols-2">
+          <Party
+            title={L.from}
+            name={document.issuer.name}
+            legalName={document.issuer.legal_name}
+            address={document.issuer.address}
+            taxIds={document.issuer.tax_ids}
+          />
+          <Party
+            title={L.billTo}
+            name={document.client.name}
+            address={document.client.address}
+            email={document.client.email}
+            taxIds={document.client.tax_ids}
+          />
+        </div>
+
+        <div className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
+          <Field label={L.issueDate} value={showDate(document.issue_date)} />
+          <Field label={L.dueDate} value={showDate(document.due_date)} />
+          {document.custom_fields.map((field) => (
+            <Field key={field.label} label={field.label} value={field.value} />
+          ))}
+        </div>
+
+        {document.lines.length > 0 ? (
+          <table className="mt-9 w-full">
             <thead>
-              <tr className="border-b border-neutral-200">
-                <th className="py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              <tr style={{ borderBottom: `1px solid ${RULE}` }}>
+                <th
+                  className="pb-2 text-left text-[10px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: MUTED }}
+                >
                   {L.description}
                 </th>
-                <th className="py-2 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                <th
+                  className="pb-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] w-20"
+                  style={{ color: MUTED }}
+                >
                   {L.quantity}
                 </th>
-                <th className="py-2 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                <th
+                  className="pb-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] w-28"
+                  style={{ color: MUTED }}
+                >
                   {L.unitPrice}
                 </th>
-                <th className="py-2 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                <th
+                  className="pb-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] w-28"
+                  style={{ color: MUTED }}
+                >
                   {L.amount}
                 </th>
               </tr>
             </thead>
             <tbody>
               {document.lines.map((line, index) => (
-                <tr key={index} className="border-b border-neutral-100 last:border-0">
-                  <td className="py-2.5 pr-4">{line.description}</td>
-                  <td className="py-2.5 text-right tabular-nums">{Number(line.quantity)}</td>
-                  <td className="py-2.5 text-right tabular-nums">
-                    {money(line.unit_price, currency)}
+                <tr key={index} style={{ borderBottom: `1px solid ${RULE}` }}>
+                  <td className="py-3 pr-4 text-[13.5px] leading-snug">{line.description}</td>
+                  <td className="py-3 text-right text-[13.5px] tabular-nums">
+                    {Number(line.quantity)}
                   </td>
-                  <td className="py-2.5 text-right tabular-nums">{money(line.total, currency)}</td>
+                  <td className="py-3 text-right text-[13.5px] tabular-nums">
+                    {money(line.unit_price)}
+                  </td>
+                  <td className="py-3 text-right text-[13.5px] tabular-nums">
+                    {money(line.total)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      ) : (
-        // Not an error state: an invoice with no lines is the normal case
-        // where the fiscal document was issued somewhere else and this is
-        // only tracking the money.
-        <p className="mt-7 text-sm text-muted-foreground" data-testid="document-no-lines">
-          {t('invoices.document.noLines')}
-        </p>
-      )}
+        ) : (
+          // Not an error state: an invoice with no lines is the normal
+          // case where the fiscal document was issued somewhere else and
+          // this only tracks the money.
+          <p
+            className="mt-9 text-[13px] leading-relaxed"
+            style={{ color: MUTED }}
+            data-testid="document-no-lines"
+          >
+            {t('invoices.document.noLines')}
+          </p>
+        )}
 
-      <div className="mt-6 flex justify-end">
-        <dl className="w-full max-w-[280px] space-y-1.5">
-          {totals.map((row) => (
-            <div
-              key={row.label}
-              className={`flex items-baseline justify-between gap-6 ${
-                row.strong ? 'border-t border-neutral-200 pt-1.5' : ''
-              }`}
-            >
-              <dt
-                className={row.strong ? 'text-sm font-semibold' : 'text-sm text-muted-foreground'}
+        <div className="mt-7 flex justify-end">
+          <dl className="w-full max-w-[300px]">
+            {totals.map((row) => (
+              <div
+                key={row.label}
+                className="flex items-baseline justify-between gap-8 py-1.5"
+                style={row.strong ? { borderTop: `1px solid ${RULE}` } : undefined}
               >
-                {row.label}
-              </dt>
-              <dd
-                className="text-sm tabular-nums font-medium"
-                style={row.strong ? { color: accent, fontWeight: 700 } : undefined}
-              >
-                {row.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
+                <dt
+                  className={row.strong ? 'text-[13px] font-semibold' : 'text-[13px]'}
+                  style={row.strong ? undefined : { color: MUTED }}
+                >
+                  {row.label}
+                </dt>
+                <dd
+                  className="text-[13.5px] tabular-nums"
+                  style={
+                    row.strong ? { color: accent, fontWeight: 700, fontSize: '15px' } : undefined
+                  }
+                >
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        {(document.payment_details || document.notes) && (
+          <div className="mt-9 grid gap-6 sm:grid-cols-2">
+            {document.payment_details && (
+              <div>
+                <div
+                  className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: MUTED }}
+                >
+                  {L.paymentDetails}
+                </div>
+                <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line">
+                  {document.payment_details}
+                </p>
+              </div>
+            )}
+            {document.notes && (
+              <div>
+                <div
+                  className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: MUTED }}
+                >
+                  {L.notes}
+                </div>
+                <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line">
+                  {document.notes}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {document.footer_note && (
+          <p
+            className="mt-10 pt-4 text-[11.5px] leading-relaxed"
+            style={{ borderTop: `1px solid ${RULE}`, color: MUTED }}
+          >
+            {document.footer_note}
+          </p>
+        )}
       </div>
-
-      {(document.payment_details || document.notes) && (
-        <div className="mt-7 space-y-4">
-          {document.payment_details && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                {L.paymentDetails}
-              </div>
-              <p className="mt-1 text-sm whitespace-pre-line">{document.payment_details}</p>
-            </div>
-          )}
-          {document.notes && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                {L.notes}
-              </div>
-              <p className="mt-1 text-sm whitespace-pre-line">{document.notes}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {document.footer_note && (
-        <p className="mt-8 border-t border-neutral-100 pt-4 text-xs text-muted-foreground">
-          {document.footer_note}
-        </p>
-      )}
     </div>
   )
 }

@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Receipt, Plus, Settings2, AlertTriangle, Wallet, CalendarClock } from 'lucide-react'
+import { Receipt, Plus, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -24,88 +25,58 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import { SectionCard, Segmented, StateBadge, TH } from '@/components/invoice-ui'
+import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
+import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { fiscal as fiscalApi, invoices as invoicesApi, payees as payeesApi } from '@/lib/api'
-import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import {
-  STATE_TONE,
   customFieldDefs,
   displayNumber,
   invoiceErrorKey,
   linesTotal,
 } from '@/lib/invoice-utils'
-import type { Invoice, InvoiceLineInput, InvoiceState, IssuerTaxId } from '@/types'
+import type { Invoice, InvoiceLineInput, IssuerTaxId } from '@/types'
 
 /**
- * The receivables screen: what is owed, what is late, and what landed.
+ * Receivables: what is owed, what is late, what landed.
  *
- * Reachable only from a business workspace — `ModuleRoute` sends anyone
- * else home, and every endpoint behind it answers 404 for a workspace
- * without the module. A personal workspace never renders a byte of this.
+ * Reachable only from a business workspace — the module resolver leaves
+ * `invoices` out of a personal one, so nothing here is ever rendered
+ * there.
  */
 
-const FILTERS: { value: string; key: string }[] = [
-  { value: 'all', key: 'invoices.filter.all' },
-  { value: 'open', key: 'invoices.filter.open' },
-  { value: 'overdue', key: 'invoices.filter.overdue' },
-  { value: 'paid', key: 'invoices.filter.paid' },
-  { value: 'draft', key: 'invoices.filter.draft' },
-]
+type Filter = 'all' | 'open' | 'overdue' | 'paid' | 'draft'
 
-function StateBadge({ state }: { state: InvoiceState }) {
-  const { t } = useTranslation()
-  return (
-    <span
-      data-testid={`invoice-state-${state}`}
-      className={cn(
-        'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium',
-        STATE_TONE[state],
-      )}
-    >
-      {t(`invoices.state.${state}`)}
-    </span>
-  )
-}
+/** The three derived states where money is still expected. `open` in the
+ *  filter bar means all of them, which is why it is not a server query. */
+const OUTSTANDING: string[] = ['open', 'partial', 'overdue']
 
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  tone,
-  testId,
-}: {
-  icon: typeof Wallet
-  label: string
-  value: string
-  tone?: string
-  testId: string
-}) {
-  return (
-    <div className="rounded-xl border bg-card p-4" data-testid={testId}>
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
-      </div>
-      <div className={cn('mt-2 text-2xl font-semibold tabular-nums', tone)}>{value}</div>
-    </div>
-  )
-}
+/** Aging buckets, oldest last. The tone runs from quiet to loud with the
+ *  age, so the bar reads as a temperature without needing its legend. */
+const BUCKETS = [
+  { key: 'current', tone: 'bg-emerald-500/70' },
+  { key: 'd1_30', tone: 'bg-amber-400/80' },
+  { key: 'd31_60', tone: 'bg-orange-500/80' },
+  { key: 'd61_90', tone: 'bg-rose-500/80' },
+  { key: 'd90_plus', tone: 'bg-rose-700/80' },
+] as const
 
 export default function InvoicesPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const locale = useDisplayLocale()
+  const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { current, canWrite } = useWorkspace()
-  const locale = current?.locale ?? 'en'
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { canWrite } = useWorkspace()
+  const currency = user?.preferences?.currency_display ?? 'USD'
 
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState<Filter>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -113,35 +84,37 @@ export default function InvoicesPage() {
     queryKey: ['invoice-settings'],
     queryFn: invoicesApi.settings,
   })
-  const { data: summary } = useQuery({
+  const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['invoice-summary'],
     queryFn: invoicesApi.summary,
   })
-  const { data: list = [], isLoading } = useQuery({
+  const { data: list, isLoading } = useQuery({
     queryKey: ['invoices', filter],
-    queryFn: () => invoicesApi.list(filter === 'all' ? {} : { state: filter }),
+    queryFn: () => invoicesApi.list(filter === 'all' || filter === 'open' ? {} : { state: filter }),
   })
 
-  // `open` in the filter bar means "still expected", which is three
-  // derived states, not one. Asking the server for each and merging
-  // would be three round-trips for a list it already sent.
   const visible = useMemo(() => {
-    if (filter !== 'open') return list
-    return list.filter((i) => ['open', 'partial', 'overdue'].includes(i.state))
+    if (!list) return []
+    return filter === 'open' ? list.filter((i) => OUTSTANDING.includes(i.state)) : list
   }, [list, filter])
 
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['invoices'] })
-    void queryClient.invalidateQueries({ queryKey: ['invoice-summary'] })
-  }
+  const money = (value: string | number | null | undefined, code?: string) =>
+    mask(formatCurrency(Number(value ?? 0), code ?? currency, locale))
 
-  const money = (value: string | number | null | undefined, currency?: string) =>
-    mask(formatCurrency(Number(value ?? 0), currency ?? userCurrency, locale))
+  const showDate = (iso: string) =>
+    new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
+
+  const outstanding = Number(summary?.outstanding ?? 0)
+  const overdue = Number(summary?.overdue_amount ?? 0)
+  const bucketTotal = BUCKETS.reduce(
+    (sum, b) => sum + Number(summary?.buckets[b.key] ?? 0),
+    0,
+  )
 
   return (
-    <div className="container max-w-6xl py-6 space-y-6">
+    <div>
       <PageHeader
-        section={t('nav.business', 'Business')}
+        section={t('invoices.section')}
         title={t('invoices.title')}
         action={
           <div className="flex items-center gap-2">
@@ -164,73 +137,162 @@ export default function InvoicesPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard
-          icon={Wallet}
-          label={t('invoices.summary.outstanding')}
-          value={money(summary?.outstanding)}
-          testId="summary-outstanding"
-        />
-        <SummaryCard
-          icon={AlertTriangle}
-          label={t('invoices.summary.overdue')}
-          value={money(summary?.overdue_amount)}
-          tone={Number(summary?.overdue_amount ?? 0) > 0 ? 'text-red-600 dark:text-red-400' : undefined}
-          testId="summary-overdue"
-        />
-        <SummaryCard
-          icon={Receipt}
-          label={t('invoices.summary.receivedThisMonth')}
-          value={money(summary?.received_this_month)}
-          testId="summary-received"
-        />
-        <SummaryCard
-          icon={CalendarClock}
-          label={t('invoices.summary.upcoming')}
-          value={String(summary?.upcoming.length ?? 0)}
-          testId="summary-upcoming"
-        />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map((option) => (
-          <button
-            key={option.value}
-            onClick={() => setFilter(option.value)}
-            data-testid={`invoice-filter-${option.value}`}
-            className={cn(
-              'rounded-md border px-3 py-1.5 text-sm transition-colors',
-              filter === option.value
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border text-muted-foreground hover:text-foreground',
+      {/* One block, in the dashboard's shape: a headline figure with its
+          supporting numbers beside it, and the accountant's view of the
+          same money to the right. Four identical stat cards say less. */}
+      <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3">
+          <div className="lg:col-span-2 px-5 py-4">
+            <p className="text-xs font-medium text-muted-foreground mb-0.5">
+              {t('invoices.summary.outstanding')}
+            </p>
+            {summaryLoading ? (
+              <Skeleton className="h-10 w-40" />
+            ) : (
+              <p className="text-4xl font-bold tabular-nums leading-tight text-foreground">
+                {money(outstanding)}
+              </p>
             )}
-          >
-            {t(option.key)}
-          </button>
-        ))}
+
+            <div className="flex flex-wrap gap-6 mt-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">
+                  {t('invoices.summary.overdue')}
+                </p>
+                <p
+                  className={cn(
+                    'text-sm font-bold tabular-nums',
+                    overdue > 0 ? 'text-rose-500' : 'text-muted-foreground',
+                  )}
+                  data-testid="summary-overdue"
+                >
+                  {money(overdue)}
+                  {summary && summary.overdue_count > 0 && (
+                    <span className="ml-1.5 font-medium text-muted-foreground">
+                      {t('invoices.summary.overdueCount', { count: summary.overdue_count })}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">
+                  {t('invoices.summary.receivedThisMonth')}
+                </p>
+                <p className="text-sm font-bold tabular-nums text-emerald-600" data-testid="summary-received">
+                  {money(summary?.received_this_month)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">
+                  {t('invoices.summary.upcoming')}
+                </p>
+                <p className="text-sm font-bold tabular-nums text-foreground" data-testid="summary-upcoming">
+                  {summary?.upcoming.length ?? 0}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-border lg:border-t-0 lg:border-l">
+            <p className="text-xs font-medium text-muted-foreground mb-2">
+              {t('invoices.summary.aging')}
+            </p>
+            {bucketTotal > 0 ? (
+              <>
+                <div
+                  className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
+                  data-testid="aging-bar"
+                >
+                  {BUCKETS.map((bucket) => {
+                    const amount = Number(summary?.buckets[bucket.key] ?? 0)
+                    if (amount <= 0) return null
+                    return (
+                      <div
+                        key={bucket.key}
+                        className={bucket.tone}
+                        style={{ width: `${(amount / bucketTotal) * 100}%` }}
+                        title={t(`invoices.bucket.${bucket.key}`)}
+                      />
+                    )
+                  })}
+                </div>
+                <dl className="mt-3 space-y-1">
+                  {BUCKETS.map((bucket) => {
+                    const amount = Number(summary?.buckets[bucket.key] ?? 0)
+                    if (amount <= 0) return null
+                    return (
+                      <div key={bucket.key} className="flex items-center gap-2 text-xs">
+                        <span className={cn('h-2 w-2 rounded-full shrink-0', bucket.tone)} />
+                        <dt className="text-muted-foreground">
+                          {t(`invoices.bucket.${bucket.key}`)}
+                        </dt>
+                        <dd className="ml-auto tabular-nums font-medium">{money(amount)}</dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t('invoices.summary.nothingDue')}</p>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="mb-4">
+        <Segmented<Filter>
+          value={filter}
+          onChange={setFilter}
+          testIdPrefix="invoice-filter"
+          options={[
+            { value: 'all', label: t('invoices.filter.all') },
+            { value: 'open', label: t('invoices.filter.open') },
+            { value: 'overdue', label: t('invoices.filter.overdue') },
+            { value: 'paid', label: t('invoices.filter.paid') },
+            { value: 'draft', label: t('invoices.filter.draft') },
+          ]}
+        />
+      </div>
+
+      <SectionCard>
         {isLoading ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">{t('common.loading')}</div>
+          <div className="p-5 space-y-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
         ) : visible.length === 0 ? (
-          <div className="p-12 flex flex-col items-center text-center gap-3" data-testid="invoices-empty">
-            <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Receipt className="h-6 w-6 text-primary" />
-            </div>
-            <p className="text-sm text-muted-foreground max-w-sm">{t('invoices.empty')}</p>
+          <div className="px-5 py-14 text-center" data-testid="invoices-empty">
+            <Receipt className="h-8 w-8 mx-auto text-muted-foreground/50" />
+            <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto">
+              {filter === 'all' ? t('invoices.empty') : t('invoices.emptyFiltered')}
+            </p>
+            {filter === 'all' && canWrite && (
+              <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                {t('invoices.new')}
+              </Button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2.5 text-left font-medium">{t('invoices.column.number')}</th>
-                  <th className="px-4 py-2.5 text-left font-medium">{t('invoices.column.client')}</th>
-                  <th className="px-4 py-2.5 text-left font-medium">{t('invoices.column.due')}</th>
-                  <th className="px-4 py-2.5 text-right font-medium">{t('invoices.column.total')}</th>
-                  <th className="px-4 py-2.5 text-right font-medium">{t('invoices.column.balance')}</th>
-                  <th className="px-4 py-2.5 text-left font-medium">{t('invoices.column.state')}</th>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.column.client')}</th>
+                  <th className={`${TH} text-left w-24 hidden sm:table-cell`}>
+                    {t('invoices.column.number')}
+                  </th>
+                  <th className={`${TH} text-left w-32 hidden md:table-cell`}>
+                    {t('invoices.column.due')}
+                  </th>
+                  <th className={`${TH} text-right w-32`}>{t('invoices.column.total')}</th>
+                  <th className={`${TH} text-right w-32 hidden sm:table-cell`}>
+                    {t('invoices.column.balance')}
+                  </th>
+                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>
+                    {t('invoices.column.state')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -239,33 +301,48 @@ export default function InvoicesPage() {
                     key={invoice.id}
                     onClick={() => navigate(`/invoices/${invoice.id}`)}
                     data-testid="invoice-row"
-                    className="border-t cursor-pointer hover:bg-muted/40 transition-colors"
+                    className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
                   >
-                    <td className="px-4 py-3 font-medium tabular-nums">
+                    <td className="py-3 pl-4 sm:pl-5">
+                      <div className="text-sm font-medium text-foreground truncate">
+                        {invoice.payee?.name ?? (
+                          <span className="text-muted-foreground">{t('invoices.noClient')}</span>
+                        )}
+                      </div>
+                      {/* The number and date fold in here on small screens
+                          rather than disappearing with their columns. */}
+                      <div className="sm:hidden text-xs text-muted-foreground tabular-nums mt-0.5">
+                        {displayNumber(invoice, settings?.number_prefix) ?? t('invoices.noNumber')}
+                        {' · '}
+                        {showDate(invoice.due_date)}
+                      </div>
+                    </td>
+                    <td className="py-3 text-xs text-muted-foreground tabular-nums hidden sm:table-cell">
                       {displayNumber(invoice, settings?.number_prefix) ?? (
-                        <span className="text-muted-foreground">{t('invoices.noNumber')}</span>
+                        <span className="text-muted-foreground/60">{t('invoices.noNumber')}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      {invoice.payee?.name ?? (
-                        <span className="text-muted-foreground">{t('invoices.noClient')}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground tabular-nums">
-                      {invoice.due_date}
+                    <td className="py-3 hidden md:table-cell">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {showDate(invoice.due_date)}
+                      </span>
                       {invoice.days_overdue > 0 && (
-                        <span className="ml-2 text-xs text-red-600 dark:text-red-400">
+                        <span className="ml-1.5 text-[11px] font-medium text-rose-500">
                           {t('invoices.daysLate', { count: invoice.days_overdue })}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td className="py-3 text-right text-xs sm:text-sm tabular-nums text-muted-foreground">
                       {money(invoice.total, invoice.currency)}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">
-                      {money(invoice.balance, invoice.currency)}
+                    <td className="py-3 text-right text-xs sm:text-sm font-bold tabular-nums hidden sm:table-cell">
+                      {Number(invoice.balance) > 0 ? (
+                        money(invoice.balance, invoice.currency)
+                      ) : (
+                        <span className="text-muted-foreground font-medium">—</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="py-3 pr-4 sm:pr-5 text-right">
                       <StateBadge state={invoice.state} />
                     </td>
                   </tr>
@@ -274,15 +351,12 @@ export default function InvoicesPage() {
             </table>
           </div>
         )}
-      </div>
+      </SectionCard>
 
       <CreateInvoiceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(invoice) => {
-          invalidate()
-          navigate(`/invoices/${invoice.id}`)
-        }}
+        onCreated={(invoice) => navigate(`/invoices/${invoice.id}`)}
       />
       <InvoiceSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
@@ -299,6 +373,7 @@ function CreateInvoiceDialog({
   onCreated: (invoice: Invoice) => void
 }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const { data: settings } = useQuery({
     queryKey: ['invoice-settings'],
     queryFn: invoicesApi.settings,
@@ -334,6 +409,11 @@ function CreateInvoiceDialog({
       }),
     onSuccess: (invoice) => {
       toast.success(t('invoices.created'))
+      // The dialog owns the mutation, so it owns the invalidation: the
+      // parent navigates away and would otherwise leave a stale list
+      // behind for whenever the user comes back to it.
+      void queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      void queryClient.invalidateQueries({ queryKey: ['invoice-summary'] })
       onOpenChange(false)
       setPayeeId('')
       setTotal('')

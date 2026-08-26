@@ -49,8 +49,8 @@ export default function SharedInvoicePage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 py-8 px-4">
-      <div className="mx-auto max-w-3xl space-y-4">
+    <div className="min-h-screen bg-background py-8 px-4">
+      <div className="mx-auto max-w-3xl space-y-3">
         <div className="flex justify-end">
           <Button asChild size="sm" variant="outline" data-testid="shared-download">
             <a href={publicInvoices.pdfUrl(token)} target="_blank" rel="noopener noreferrer">
