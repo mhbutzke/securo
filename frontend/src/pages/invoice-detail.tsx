@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Ban, Check, CheckCircle2, CircleSlash, Copy, Download, Link2,
-  MoreHorizontal, RotateCcw, Send, Share2, Trash2, Unlink,
+  MoreHorizontal, Pencil, RotateCcw, Send, Share2, Trash2, Unlink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -26,6 +26,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import {
   IconAction,
@@ -35,18 +42,25 @@ import {
   StateBadge,
 } from '@/components/invoice-ui'
 import { InvoiceDocumentView } from '@/components/invoice-document'
+import { InvoiceLineEditor } from '@/components/invoice-line-editor'
+import type { Invoice, InvoiceLineInput } from '@/types'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-import { invoices as invoicesApi, transactions as transactionsApi } from '@/lib/api'
+import {
+  invoices as invoicesApi,
+  payees as payeesApi,
+  transactions as transactionsApi,
+} from '@/lib/api'
 import {
   availableActions,
   customFieldDefs,
   displayNumber,
   invoiceErrorKey,
+  linesTotal,
 } from '@/lib/invoice-utils'
 
 /**
@@ -72,6 +86,7 @@ export default function InvoiceDetailPage() {
   const fallbackCurrency = user?.preferences?.currency_display ?? 'USD'
 
   const [linkOpen, setLinkOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('details')
   const [copied, setCopied] = useState(false)
 
@@ -219,6 +234,17 @@ export default function InvoiceDetailPage() {
         action={
           canWrite ? (
             <div className="flex flex-wrap items-center gap-2">
+              {actions.canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditOpen(true)}
+                  data-testid="invoice-edit"
+                >
+                  <Pencil className="h-4 w-4 mr-1.5" />
+                  {t('common.edit')}
+                </Button>
+              )}
               {actions.canIssue && (
                 <Button size="sm" onClick={() => issueMutation.mutate()} data-testid="invoice-issue">
                   <Send className="h-4 w-4 mr-1.5" />
@@ -537,6 +563,15 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
+      <EditDraftDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        invoice={invoice}
+        showTax={(settings?.tax_fields ?? 'hidden') !== 'hidden'}
+        currency={currency}
+        onSaved={refresh}
+      />
+
       <LinkPaymentDialog
         open={linkOpen}
         onOpenChange={setLinkOpen}
@@ -660,6 +695,159 @@ function LinkPaymentDialog({
             data-testid="invoice-allocation-submit"
           >
             {t('invoices.action.link')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Editing a draft.
+ *
+ * Only a draft: once issued, the financial substance is frozen and the
+ * server refuses the change, because a document that changes after the
+ * client received it is not an edit, it is a second document. The button
+ * that opens this disappears at the same moment.
+ *
+ * Notes stay editable after issuance through the detail view, since they
+ * are the seller's own record and never left the building.
+ */
+function EditDraftDialog({
+  open,
+  onOpenChange,
+  invoice,
+  showTax,
+  currency,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  invoice: Invoice
+  showTax: boolean
+  currency: string
+  onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  const { data: clients = [] } = useQuery({
+    queryKey: ['payees', 'for-invoice'],
+    queryFn: () => payeesApi.list({}),
+    enabled: open,
+  })
+
+  // Seeded from the invoice each time the dialog opens, keyed so a
+  // reopen after a save starts from what was saved.
+  const [payeeId, setPayeeId] = useState(invoice.payee_id ?? '')
+  const [total, setTotal] = useState(invoice.total)
+  const [dueDate, setDueDate] = useState(invoice.due_date)
+  const [notes, setNotes] = useState(invoice.notes ?? '')
+  const [lines, setLines] = useState<InvoiceLineInput[]>(() =>
+    invoice.lines.map((line) => ({
+      description: line.description,
+      quantity: String(Number(line.quantity)),
+      unit_price: line.unit_price,
+      tax_rate: line.tax_rate,
+    })),
+  )
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      invoicesApi.update(invoice.id, {
+        payee_id: payeeId || null,
+        due_date: dueDate,
+        notes: notes || null,
+        // Lines are the source of truth once they exist: the server
+        // recomputes the total from them and ignores what was typed.
+        ...(lines.length ? { lines } : { total }),
+      }),
+    onSuccess: () => {
+      toast.success(t('invoices.updated'))
+      onOpenChange(false)
+      onSaved()
+    },
+    onError: (error) => {
+      const key = invoiceErrorKey(error)
+      toast.error(key ? t(key, t('invoices.errors.generic')) : t('invoices.errors.generic'))
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('invoices.editDraft')}</DialogTitle>
+          <DialogDescription>{t('invoices.editDraftDescription')}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>{t('invoices.field.client')}</Label>
+            <Select value={payeeId} onValueChange={setPayeeId}>
+              <SelectTrigger data-testid="edit-client-select">
+                <SelectValue placeholder={t('invoices.field.clientPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-total">{t('invoices.field.total')}</Label>
+              <Input
+                id="edit-total"
+                data-testid="edit-total-input"
+                inputMode="decimal"
+                value={lines.length ? linesTotal(lines).toFixed(2) : total}
+                onChange={(e) => setTotal(e.target.value)}
+                disabled={lines.length > 0}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-due">{t('invoices.field.dueDate')}</Label>
+              <Input
+                id="edit-due"
+                data-testid="edit-due-input"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <InvoiceLineEditor
+            lines={lines}
+            onChange={setLines}
+            currency={currency}
+            showTax={showTax}
+          />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-notes">{t('invoices.field.notes')}</Label>
+            <Input
+              id="edit-notes"
+              data-testid="edit-notes-input"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            data-testid="edit-submit"
+          >
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

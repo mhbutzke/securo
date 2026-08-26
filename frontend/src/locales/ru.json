@@ -297,7 +297,21 @@
     "moreActions": "More actions",
     "allYears": "All years",
     "emptyYear": "No invoices issued in {{year}}.",
-    "showAllYears": "Show all years"
+    "showAllYears": "Show all years",
+    "label": {
+      "invoice": "Invoice",
+      "billTo": "Bill to",
+      "from": "From",
+      "description": "Description",
+      "quantity": "Qty",
+      "unitPrice": "Unit price",
+      "total": "Total",
+      "paymentDetails": "Payment details",
+      "notes": "Notes"
+    },
+    "editDraft": "Edit draft",
+    "updated": "Invoice updated",
+    "editDraftDescription": "Only drafts can change. Once issued, void it and issue a new one."
   },
   "collections": {
     "title": "Коллекции",
@@ -727,7 +741,10 @@
     "calendarNoActivity": "В этом месяце нет активности",
     "calendarNoMovements": "Нет операций",
     "calendarActualNet": "Фактический итог",
-    "calendarTransfersExcluded": "Переводы не учитываются как приход или расходы"
+    "calendarTransfersExcluded": "Переводы не учитываются как приход или расходы",
+    "invoiceBadge": "Invoice {{number}}",
+    "invoiceBadgeNoNumber": "Invoice",
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
   },
   "accounts": {
     "title": "Счета",

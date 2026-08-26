@@ -297,7 +297,21 @@
     "moreActions": "Mais ações",
     "allYears": "Todos os anos",
     "emptyYear": "Nenhuma cobrança emitida em {{year}}.",
-    "showAllYears": "Ver todos os anos"
+    "showAllYears": "Ver todos os anos",
+    "label": {
+      "invoice": "Fatura",
+      "billTo": "Cliente",
+      "from": "Emitente",
+      "description": "Descrição",
+      "quantity": "Qtd",
+      "unitPrice": "Valor unit.",
+      "total": "Total",
+      "paymentDetails": "Dados para pagamento",
+      "notes": "Observações"
+    },
+    "editDraft": "Editar rascunho",
+    "updated": "Cobrança atualizada",
+    "editDraftDescription": "Só rascunhos mudam. Depois de emitida, cancele e emita outra."
   },
   "collections": {
     "title": "Coleções",
@@ -721,7 +735,10 @@
     "calendarNoActivity": "Sem atividade neste mês",
     "calendarNoMovements": "Sem movimentações",
     "calendarActualNet": "Líquido real",
-    "calendarTransfersExcluded": "Transferências não contam como receitas ou despesas"
+    "calendarTransfersExcluded": "Transferências não contam como receitas ou despesas",
+    "invoiceBadge": "Cobrança {{number}}",
+    "invoiceBadgeNoNumber": "Cobrança",
+    "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir."
   },
   "accounts": {
     "title": "Contas",

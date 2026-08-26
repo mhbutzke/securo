@@ -217,7 +217,17 @@ export interface AccountSummary {
   projected_expenses_primary?: number | null
 }
 
+/** Set when this transaction settles an invoice. Absent in workspaces
+ *  without the invoicing module — the query behind it does not run there. */
+export interface TransactionInvoiceLink {
+  invoice_id: string
+  number: number | null
+  series: string | null
+  amount: string
+}
+
 export interface Transaction {
+  invoice_link?: TransactionInvoiceLink | null
   id: string
   user_id: string
   account_id: string | null
@@ -1095,6 +1105,8 @@ export interface InvoiceCustomFieldDef {
 }
 
 export interface InvoiceTemplate {
+  /** Overrides only. Anything left out falls back to the pack for the
+   *  issuer's language, resolved server-side. */
   labels?: Record<string, string>
   custom_fields?: InvoiceCustomFieldDef[]
 }

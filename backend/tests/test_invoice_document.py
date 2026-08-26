@@ -135,11 +135,17 @@ class TestDocument:
     async def test_labels_default_and_can_be_overridden(
         self, client: AsyncClient, biz_headers
     ):
+        # The conftest user reads pt-BR, so the workspace does too and the
+        # document defaults to the Portuguese pack. Asserted against the
+        # pack rather than a hardcoded word: the point is that the issuer's
+        # language decides, not which language that happens to be.
+        from app.services.invoice_document import default_labels
+
         default = await make_invoice(client, biz_headers)
         doc = (
             await client.get(f"/api/invoices/{default['id']}/document", headers=biz_headers)
         ).json()
-        assert doc["labels"]["quantity"] == "Qty"
+        assert doc["labels"]["quantity"] == default_labels("pt-BR")["quantity"]
 
         await client.patch(
             "/api/invoices/settings",
@@ -153,7 +159,7 @@ class TestDocument:
         assert doc["labels"]["quantity"] == "Horas"
         assert doc["labels"]["invoice"] == "Fatura"
         # Untouched labels keep their default rather than disappearing.
-        assert doc["labels"]["total"] == "Total"
+        assert doc["labels"]["total"] == default_labels("pt-BR")["total"]
 
     async def test_an_unknown_label_key_is_ignored(self, client: AsyncClient, biz_headers):
         """The template is free-form jsonb, so it can hold anything a hand
@@ -628,3 +634,104 @@ class TestPageStructure:
         page = _pages(_doc(0))[0].extract_text()
         assert "Beta LTDA" in page
         assert "Pix: alpha@exemplo.com" in page
+
+
+# ---------------------------------------------------------------------------
+# Default labels follow the issuer, not the reader
+# ---------------------------------------------------------------------------
+class TestLabelPacks:
+    def test_a_shipped_language_gets_its_own_words(self):
+        from app.services.invoice_document import default_labels
+
+        assert default_labels("pt-BR")["invoice"] == "Fatura"
+        assert default_labels("de")["dueDate"] == "Fällig am"
+        assert default_labels("fr")["invoice"] == "Facture"
+
+    def test_regional_variants_share_a_pack(self):
+        """`pt-BR` and `pt-PT` differ in ways a translator cares about and
+        not in the eighteen words on an invoice."""
+        from app.services.invoice_document import default_labels
+
+        assert default_labels("pt-PT") == default_labels("pt-BR")
+
+    def test_an_unshipped_language_falls_back_to_english(self):
+        from app.services.invoice_document import DEFAULT_LABELS, default_labels
+
+        assert default_labels("ja") == DEFAULT_LABELS
+        assert default_labels(None) == DEFAULT_LABELS
+
+    def test_every_pack_covers_every_label(self):
+        """A half-translated document reads worse than an English one."""
+        from app.services.invoice_document import DEFAULT_LABELS, LABEL_PACKS
+
+        for language, pack in LABEL_PACKS.items():
+            assert set(pack) == set(DEFAULT_LABELS), language
+
+
+@pytest.mark.asyncio
+class TestIssuerLanguage:
+    async def test_a_brazilian_workspace_gets_a_portuguese_document(
+        self, client: AsyncClient, auth_headers
+    ):
+        created = await client.post(
+            "/api/workspaces",
+            headers=auth_headers,
+            json={"name": "Consultoria BR", "kind": "business",
+                  "self_membership": True, "locale": "pt-BR"},
+        )
+        assert created.status_code == 201, created.text
+        headers = {**auth_headers, "X-Workspace-Id": created.json()["id"]}
+
+        invoice = await make_invoice(client, headers)
+        doc = (
+            await client.get(f"/api/invoices/{invoice['id']}/document", headers=headers)
+        ).json()
+        assert doc["labels"]["invoice"] == "Fatura"
+        assert doc["labels"]["billTo"] == "Cliente"
+
+    async def test_an_explicit_label_still_wins_over_the_pack(
+        self, client: AsyncClient, auth_headers
+    ):
+        created = await client.post(
+            "/api/workspaces",
+            headers=auth_headers,
+            json={"name": "Consultoria BR2", "kind": "business",
+                  "self_membership": True, "locale": "pt-BR"},
+        )
+        headers = {**auth_headers, "X-Workspace-Id": created.json()["id"]}
+        await client.patch(
+            "/api/invoices/settings",
+            headers=headers,
+            json={"template": {"labels": {"invoice": "Recibo"}}},
+        )
+        invoice = await make_invoice(client, headers)
+        doc = (
+            await client.get(f"/api/invoices/{invoice['id']}/document", headers=headers)
+        ).json()
+        assert doc["labels"]["invoice"] == "Recibo"
+        # Untouched labels still come from the pack, not from English.
+        assert doc["labels"]["dueDate"] == "Vencimento"
+
+    async def test_switching_the_interface_never_retitles_an_issued_document(
+        self, client: AsyncClient, auth_headers
+    ):
+        """The words were the sender's choice at issuance. Changing the
+        workspace language afterwards must not rewrite a document the
+        client already holds."""
+        created = await client.post(
+            "/api/workspaces",
+            headers=auth_headers,
+            json={"name": "Consultoria BR3", "kind": "business",
+                  "self_membership": True, "locale": "pt-BR"},
+        )
+        workspace_id = created.json()["id"]
+        headers = {**auth_headers, "X-Workspace-Id": workspace_id}
+        invoice = await make_invoice(client, headers)
+
+        await client.patch(
+            f"/api/workspaces/{workspace_id}", headers=headers, json={"locale": "en"}
+        )
+        doc = (
+            await client.get(f"/api/invoices/{invoice['id']}/document", headers=headers)
+        ).json()
+        assert doc["labels"]["invoice"] == "Fatura"

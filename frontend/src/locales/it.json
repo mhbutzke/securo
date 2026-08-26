@@ -297,7 +297,21 @@
     "moreActions": "More actions",
     "allYears": "All years",
     "emptyYear": "No invoices issued in {{year}}.",
-    "showAllYears": "Show all years"
+    "showAllYears": "Show all years",
+    "label": {
+      "invoice": "Invoice",
+      "billTo": "Bill to",
+      "from": "From",
+      "description": "Description",
+      "quantity": "Qty",
+      "unitPrice": "Unit price",
+      "total": "Total",
+      "paymentDetails": "Payment details",
+      "notes": "Notes"
+    },
+    "editDraft": "Edit draft",
+    "updated": "Invoice updated",
+    "editDraftDescription": "Only drafts can change. Once issued, void it and issue a new one."
   },
   "collections": {
     "title": "Collezioni",
@@ -721,7 +735,10 @@
     "calendarNoActivity": "Nessuna attività questo mese",
     "calendarNoMovements": "Nessun movimento",
     "calendarActualNet": "Netto effettivo",
-    "calendarTransfersExcluded": "I trasferimenti non contano come entrate o spese"
+    "calendarTransfersExcluded": "I trasferimenti non contano come entrate o spese",
+    "invoiceBadge": "Invoice {{number}}",
+    "invoiceBadgeNoNumber": "Invoice",
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
   },
   "accounts": {
     "title": "Conti",

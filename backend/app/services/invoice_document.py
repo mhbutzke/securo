@@ -37,6 +37,11 @@ from app.models.workspace import Workspace, WorkspaceTaxId
 
 #: Labels a template may override. Anything not listed is not overridable,
 #: which keeps a stray key in the jsonb from silently becoming UI.
+#:
+#: English is the fallback, not the default: `default_labels()` picks the
+#: pack for the *issuer's* locale first. The document is written in the
+#: sender's language, and a Brazilian shipping "Invoice / Bill to / Qty"
+#: until they rename all eighteen by hand is a bad first run.
 DEFAULT_LABELS: dict[str, str] = {
     "invoice": "Invoice",
     "billTo": "Bill to",
@@ -57,6 +62,132 @@ DEFAULT_LABELS: dict[str, str] = {
     "paymentDetails": "Payment details",
     "notes": "Notes",
 }
+
+#: Shipped label packs, by language. Deliberately few: this is the set
+#: the product is actually sold in, and a half-translated document reads
+#: worse than an English one. A locale with no pack falls back to
+#: `DEFAULT_LABELS`, and every label stays individually overridable
+#: afterwards regardless.
+#:
+#: These are *defaults for the sender*, never a translation for the
+#: reader: the document keeps the words its issuer chose, whoever opens
+#: it. That is why they are resolved once, at issuance, into the snapshot.
+LABEL_PACKS: dict[str, dict[str, str]] = {
+    "pt": {
+        "invoice": "Fatura",
+        "billTo": "Cliente",
+        "from": "Emitente",
+        "number": "Número",
+        "issueDate": "Emissão",
+        "dueDate": "Vencimento",
+        "description": "Descrição",
+        "quantity": "Qtd",
+        "unitPrice": "Valor unit.",
+        "amount": "Valor",
+        "subtotal": "Subtotal",
+        "discount": "Desconto",
+        "tax": "Impostos",
+        "total": "Total",
+        "paid": "Recebido",
+        "balance": "Saldo devedor",
+        "paymentDetails": "Dados para pagamento",
+        "notes": "Observações",
+    },
+    "es": {
+        "invoice": "Factura",
+        "billTo": "Cliente",
+        "from": "Emisor",
+        "number": "Número",
+        "issueDate": "Emisión",
+        "dueDate": "Vencimiento",
+        "description": "Descripción",
+        "quantity": "Cant.",
+        "unitPrice": "Precio unit.",
+        "amount": "Importe",
+        "subtotal": "Subtotal",
+        "discount": "Descuento",
+        "tax": "Impuestos",
+        "total": "Total",
+        "paid": "Cobrado",
+        "balance": "Saldo pendiente",
+        "paymentDetails": "Datos de pago",
+        "notes": "Notas",
+    },
+    "fr": {
+        "invoice": "Facture",
+        "billTo": "Client",
+        "from": "Émetteur",
+        "number": "Numéro",
+        "issueDate": "Date d'émission",
+        "dueDate": "Échéance",
+        "description": "Désignation",
+        "quantity": "Qté",
+        "unitPrice": "Prix unit.",
+        "amount": "Montant",
+        "subtotal": "Sous-total",
+        "discount": "Remise",
+        "tax": "TVA",
+        "total": "Total",
+        "paid": "Réglé",
+        "balance": "Reste à payer",
+        "paymentDetails": "Coordonnées de paiement",
+        "notes": "Notes",
+    },
+    "de": {
+        "invoice": "Rechnung",
+        "billTo": "Rechnungsempfänger",
+        "from": "Rechnungssteller",
+        "number": "Nummer",
+        "issueDate": "Rechnungsdatum",
+        "dueDate": "Fällig am",
+        "description": "Bezeichnung",
+        "quantity": "Menge",
+        "unitPrice": "Einzelpreis",
+        "amount": "Betrag",
+        "subtotal": "Zwischensumme",
+        "discount": "Rabatt",
+        "tax": "USt.",
+        "total": "Gesamt",
+        "paid": "Bezahlt",
+        "balance": "Offener Betrag",
+        "paymentDetails": "Zahlungsinformationen",
+        "notes": "Hinweise",
+    },
+    "it": {
+        "invoice": "Fattura",
+        "billTo": "Cliente",
+        "from": "Emittente",
+        "number": "Numero",
+        "issueDate": "Data emissione",
+        "dueDate": "Scadenza",
+        "description": "Descrizione",
+        "quantity": "Qtà",
+        "unitPrice": "Prezzo unit.",
+        "amount": "Importo",
+        "subtotal": "Subtotale",
+        "discount": "Sconto",
+        "tax": "IVA",
+        "total": "Totale",
+        "paid": "Incassato",
+        "balance": "Saldo dovuto",
+        "paymentDetails": "Dati per il pagamento",
+        "notes": "Note",
+    },
+}
+
+
+def default_labels(locale: Optional[str]) -> dict[str, str]:
+    """The label pack for the issuer's language, English if none ships.
+
+    Keyed on the language subtag, so `pt-BR` and `pt-PT` share a pack —
+    the two differ in vocabulary a translator would care about and not in
+    the eighteen words on an invoice.
+    """
+    if not locale:
+        return dict(DEFAULT_LABELS)
+    language = locale.replace("_", "-").split("-")[0].lower()
+    return dict(LABEL_PACKS.get(language, DEFAULT_LABELS))
+
 
 #: The default when a workspace has picked no colour. Deliberately a
 #: neutral ink rather than the product's own brand: the document belongs
@@ -119,13 +250,15 @@ class InvoiceDocument:
     has_line_items: bool
 
 
-def _label_map(template: Optional[dict[str, Any]]) -> dict[str, str]:
-    """Defaults, overridden only by keys that exist.
+def _label_map(
+    template: Optional[dict[str, Any]], locale: Optional[str] = None
+) -> dict[str, str]:
+    """The issuer's language pack, overridden only by keys that exist.
 
     A template is free-form jsonb by design, so it can hold anything a
     hand edit put there; unknown keys are ignored rather than rendered.
     """
-    labels = dict(DEFAULT_LABELS)
+    labels = default_labels(locale)
     overrides = (template or {}).get("labels")
     if isinstance(overrides, dict):
         for key, value in overrides.items():
@@ -255,7 +388,11 @@ async def build_document(
             )
             for line in invoice.lines
         ],
-        labels=_label_map(template),
+        # The workspace's own language, because the sender writes the
+        # document. Once issued, the snapshot carries the resolved labels
+        # and this is never consulted again — switching the interface to
+        # English must not retitle a document already in a client's hands.
+        labels=_label_map(template, snapshot.get("locale") if snapshot else workspace.locale),
         accent_color=(
             issued_or_live("accent_color", settings.accent_color) or DEFAULT_ACCENT
         ),

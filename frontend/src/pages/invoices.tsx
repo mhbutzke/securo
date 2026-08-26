@@ -52,7 +52,12 @@ import {
   invoiceErrorKey,
   linesTotal,
 } from '@/lib/invoice-utils'
-import type { Invoice, InvoiceLineInput, IssuerTaxId } from '@/types'
+import type {
+  Invoice,
+  InvoiceLineInput,
+  InvoiceTemplate,
+  IssuerTaxId,
+} from '@/types'
 
 /**
  * Receivables: what is owed, what is late, what landed.
@@ -768,6 +773,11 @@ function InvoiceSettingsDialog({
             />
           </div>
 
+          <LabelSection
+            template={(value('template') as InvoiceTemplate | null) ?? null}
+            onChange={(template) => setDraft({ ...draft, template })}
+          />
+
           <IssuerSection />
         </div>
 
@@ -875,6 +885,85 @@ function IssuerSection() {
       >
         {t('invoices.settings.saveIssuer')}
       </Button>
+    </div>
+  )
+}
+
+/**
+ * Renaming what the document calls each field.
+ *
+ * Only the fields a sender actually renames are offered. The full set is
+ * eighteen, and a settings dialog with eighteen text inputs is a wall
+ * nobody reads; the rest stay editable through the API for the rare
+ * workspace that wants them.
+ *
+ * Placeholders show the pack for the workspace's language, so an empty
+ * box reads as "this is what it will say" rather than as a missing
+ * value. Clearing a box returns that label to the pack.
+ */
+const EDITABLE_LABELS = [
+  'invoice',
+  'billTo',
+  'from',
+  'description',
+  'quantity',
+  'unitPrice',
+  'total',
+  'paymentDetails',
+  'notes',
+] as const
+
+function LabelSection({
+  template,
+  onChange,
+}: {
+  template: InvoiceTemplate | null
+  onChange: (template: InvoiceTemplate) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const labels = template?.labels ?? {}
+
+  const set = (key: string, value: string) => {
+    const next = { ...labels }
+    // An empty box means "use the default", not "print nothing".
+    if (value.trim()) next[key] = value
+    else delete next[key]
+    onChange({ ...(template ?? {}), labels: next })
+  }
+
+  return (
+    <div className="border-t pt-4">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        data-testid="invoice-labels-toggle"
+        className="flex w-full items-center justify-between text-left"
+      >
+        <div>
+          <Label className="cursor-pointer">{t('invoices.settings.labels')}</Label>
+          <p className="text-[11px] text-muted-foreground">
+            {t('invoices.settings.labelsHint')}
+          </p>
+        </div>
+        <ChevronDown
+          className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {EDITABLE_LABELS.map((key) => (
+            <Input
+              key={key}
+              data-testid={`invoice-label-${key}`}
+              value={labels[key] ?? ''}
+              placeholder={t(`invoices.label.${key}`)}
+              onChange={(e) => set(key, e.target.value)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

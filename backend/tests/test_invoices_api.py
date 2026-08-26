@@ -784,3 +784,159 @@ async def test_facets_are_gated_like_every_other_route(
         headers={**auth_headers, "X-Workspace-Id": str(personal_ws.id)},
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# The payee lifecycle, which used to answer 500
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_deleting_a_client_with_invoices_is_refused_in_words(
+    client: AsyncClient, biz_headers, client_payee
+):
+    """The RESTRICT foreign key is deliberate — deleting a client must
+    never silently delete the record of money they owed — but it used to
+    surface as a 500, which tells the user nothing."""
+    await _create(client, biz_headers, payee_id=str(client_payee.id))
+
+    resp = await client.delete(f"/api/payees/{client_payee.id}", headers=biz_headers)
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "payee_has_invoices"
+    assert resp.json()["detail"]["count"] == 1
+
+    # And the client is still there afterwards.
+    assert (
+        await client.get(f"/api/payees/{client_payee.id}", headers=biz_headers)
+    ).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bulk_deleting_a_client_with_invoices_is_refused_too(
+    client: AsyncClient, biz_headers, client_payee
+):
+    await _create(client, biz_headers, payee_id=str(client_payee.id))
+    resp = await client.post(
+        "/api/payees/bulk-delete", headers=biz_headers, json={"ids": [str(client_payee.id)]}
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "payee_has_invoices"
+
+
+@pytest.mark.asyncio
+async def test_a_client_with_no_invoices_still_deletes(client: AsyncClient, biz_headers):
+    created = await client.post(
+        "/api/payees", headers=biz_headers, json={"name": "Sem cobranças"}
+    )
+    assert (
+        await client.delete(f"/api/payees/{created.json()['id']}", headers=biz_headers)
+    ).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_merging_clients_carries_their_invoices_across(
+    client: AsyncClient, biz_headers, client_payee
+):
+    """Transactions already follow a merge; invoices have to as well.
+
+    The two rows were one counterparty all along, and leaving the
+    invoices behind would both strand them and trip the foreign key on
+    the delete the merge performs.
+    """
+    duplicate = (
+        await client.post("/api/payees", headers=biz_headers, json={"name": "Cliente Alpha (dup)"})
+    ).json()
+    invoice = await _create(client, biz_headers, payee_id=duplicate["id"])
+
+    merged = await client.post(
+        "/api/payees/merge",
+        headers=biz_headers,
+        json={"target_id": str(client_payee.id), "source_ids": [duplicate["id"]]},
+    )
+    assert merged.status_code == 200, merged.text
+
+    moved = await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    assert moved.json()["payee_id"] == str(client_payee.id)
+    assert moved.json()["payee"]["name"] == "Cliente Alpha"
+    # The duplicate is gone, which is the point of merging.
+    assert (
+        await client.get(f"/api/payees/{duplicate['id']}", headers=biz_headers)
+    ).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_merge_does_not_rewrite_an_issued_document(
+    client: AsyncClient, biz_headers, client_payee
+):
+    """The snapshot froze the client's name at issuance. Merging changes
+    who the invoice is linked to, never what the client received."""
+    duplicate = (
+        await client.post("/api/payees", headers=biz_headers, json={"name": "Beta Dup LTDA"})
+    ).json()
+    invoice = await _create(client, biz_headers, payee_id=duplicate["id"])
+    assert invoice["snapshot"]["counterparty"]["name"] == "Beta Dup LTDA"
+
+    await client.post(
+        "/api/payees/merge",
+        headers=biz_headers,
+        json={"target_id": str(client_payee.id), "source_ids": [duplicate["id"]]},
+    )
+    after = await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    assert after.json()["snapshot"]["counterparty"]["name"] == "Beta Dup LTDA"
+
+
+# ---------------------------------------------------------------------------
+# The badge on the transaction list
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_settling_transaction_carries_its_invoice(
+    client: AsyncClient, biz_headers, inflow
+):
+    invoice = await _create(client, biz_headers)
+    await client.post(
+        f"/api/invoices/{invoice['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "1000.00"},
+    )
+
+    listed = await client.get("/api/transactions?limit=50", headers=biz_headers)
+    assert listed.status_code == 200, listed.text
+    row = next(i for i in listed.json()["items"] if i["id"] == str(inflow.id))
+    assert row["invoice_link"]["invoice_id"] == invoice["id"]
+    assert row["invoice_link"]["number"] == invoice["number"]
+    assert row["invoice_link"]["amount"] == "1000.00"
+
+
+@pytest.mark.asyncio
+async def test_an_unlinked_transaction_carries_nothing(
+    client: AsyncClient, biz_headers, inflow
+):
+    listed = await client.get("/api/transactions?limit=50", headers=biz_headers)
+    row = next(i for i in listed.json()["items"] if i["id"] == str(inflow.id))
+    assert row["invoice_link"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_personal_workspace_never_pays_for_the_badge(
+    client: AsyncClient, auth_headers, personal_ws, session: AsyncSession, test_user
+):
+    """The field is absent, and more importantly the query behind it never
+    runs: a workspace without the module pays nothing for a feature it
+    does not have."""
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal_ws.id,
+        name="Pessoal", type="checking", currency="USD", balance=Decimal("0"),
+    )
+    session.add(account)
+    await session.flush()
+    session.add(
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal_ws.id,
+            account_id=account.id, description="mercado", amount=Decimal("-50.00"),
+            currency="USD", date=date.today(), type="debit", source="manual",
+        )
+    )
+    await session.commit()
+
+    headers = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
+    listed = await client.get("/api/transactions?limit=50", headers=headers)
+    assert listed.status_code == 200
+    assert all(item["invoice_link"] is None for item in listed.json()["items"])

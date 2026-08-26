@@ -650,6 +650,10 @@ def _build_snapshot(
             ],
         },
         "template": settings.template or {},
+        # The language the document was written in. Frozen with the rest:
+        # a workspace that later switches its interface must not retitle
+        # an invoice the client already holds.
+        "locale": workspace.locale if workspace else None,
         "number_prefix": settings.number_prefix,
         "frozen_at": datetime.now(timezone.utc).isoformat(),
     }
