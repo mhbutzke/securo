@@ -1,0 +1,687 @@
+"""Invoice ledger: issuing, settling, and reading what is owed.
+
+The one rule this module exists to enforce: **stored status is a
+decision, derived status is a fact**. Four stored values (`draft`,
+`open`, `void`, `uncollectible`) record what a person did. Everything a
+reader actually wants to know — is it paid, partly paid, late, how late
+— is computed here, from allocations and the due date, every time it is
+asked for.
+
+The cost of the alternative is visible in every peer product that stores
+`overdue`: a nightly job to set it, compensating SQL to unset it when a
+due date moves, and a permanent tax on every query downstream that has
+to remember the state is really two states.
+"""
+import uuid
+from datetime import date as _date, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any, Literal, Optional
+
+from sqlalchemy import Select, func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.invoice import Invoice, InvoiceAllocation, InvoiceLine, InvoiceSettings
+from app.models.payee import Payee
+from app.models.transaction import Transaction
+
+ZERO = Decimal("0.00")
+
+
+class InvoiceError(Exception):
+    """A rule of the ledger was broken.
+
+    Carries a stable `code` so the API layer maps it to a status without
+    matching on prose, and the frontend translates it without parsing
+    English.
+    """
+
+    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+#: What each preset fills in. The preset is a starting point, not a mode:
+#: after it is applied every field is individually overridable, and the
+#: stored row is what the rest of the code reads.
+PRESETS: dict[str, dict[str, Any]] = {
+    # The NFS-e was issued at the prefeitura, the EU invoice will be
+    # issued elsewhere, or there is no document at all — the user only
+    # wants the money tracked.
+    "tracking": {"document_required": False, "initial_state": "open", "tax_fields": "hidden"},
+    # The invoice *is* the deliverable. Starts as a draft because a
+    # document is written before it is sent, and an EU B2B invoice
+    # without discriminated VAT is not a valid invoice.
+    "document": {"document_required": True, "initial_state": "draft", "tax_fields": "optional"},
+}
+
+
+async def get_settings(session: AsyncSession, workspace_id: uuid.UUID) -> InvoiceSettings:
+    """This workspace's settings, creating the default row on first read.
+
+    Lazily created rather than seeded at workspace creation: a personal
+    workspace never opens this module, and a row it will never read is a
+    row that still has to be migrated forever.
+    """
+    result = await session.execute(
+        select(InvoiceSettings).where(InvoiceSettings.workspace_id == workspace_id)
+    )
+    settings = result.scalar_one_or_none()
+    if settings is not None:
+        return settings
+
+    settings = InvoiceSettings(workspace_id=workspace_id, preset="tracking", **PRESETS["tracking"])
+    session.add(settings)
+    await session.flush()
+    return settings
+
+
+#: Fields a caller may blank out deliberately. Everything else ignores a
+#: null, so a partial update never wipes what it did not mention.
+_NULLABLE_SETTINGS = ("logo_url", "issuer_display_name", "footer_note", "series", "number_prefix")
+
+
+async def update_settings(
+    session: AsyncSession, workspace_id: uuid.UUID, data: dict[str, Any]
+) -> InvoiceSettings:
+    settings = await get_settings(session, workspace_id)
+
+    # A preset change refills the three fields it owns, then any explicit
+    # values in the same request win over it — so "switch to document but
+    # keep tax hidden" is one call, not two.
+    preset = data.get("preset")
+    if preset and preset != settings.preset:
+        for key, value in PRESETS[preset].items():
+            setattr(settings, key, value)
+
+    for key, value in data.items():
+        if value is not None or key in _NULLABLE_SETTINGS:
+            setattr(settings, key, value)
+
+    await session.flush()
+    return settings
+
+
+# ---------------------------------------------------------------------------
+# Derived state — the whole point
+# ---------------------------------------------------------------------------
+def allocated_total(invoice: Invoice) -> Decimal:
+    return sum((a.amount for a in invoice.allocations), ZERO)
+
+
+def balance(invoice: Invoice) -> Decimal:
+    return (invoice.total or ZERO) - allocated_total(invoice)
+
+
+#: What a reader sees: the three terminal decisions, plus the four facts
+#: computed from allocations and the due date. Mirrors `InvoiceState` in
+#: `schemas/invoice.py`, which is what the API actually returns.
+DerivedState = Literal[
+    "draft", "open", "partial", "paid", "overdue", "void", "uncollectible"
+]
+
+
+def derive_state(invoice: Invoice, today: Optional[_date] = None) -> DerivedState:
+    """What a reader wants to know, computed rather than stored.
+
+    Returns one of: `draft`, `void`, `uncollectible`, `paid`, `partial`,
+    `overdue`, `open`. The first three are the stored decisions passing
+    straight through; the rest are facts about money and time.
+
+    Order matters. A decision always wins over a fact — a voided invoice
+    is not overdue, and an uncollectible one is not "partial" just
+    because something was received against it before the client went
+    under.
+    """
+    if invoice.status == "draft":
+        return "draft"
+    if invoice.status == "void":
+        return "void"
+    if invoice.status == "uncollectible":
+        return "uncollectible"
+
+    remaining = balance(invoice)
+    if remaining <= ZERO:
+        return "paid"
+
+    reference = today or datetime.now(timezone.utc).date()
+    if invoice.due_date and invoice.due_date < reference:
+        return "overdue"
+    return "partial" if allocated_total(invoice) > ZERO else "open"
+
+
+def days_overdue(invoice: Invoice, today: Optional[_date] = None) -> int:
+    reference = today or datetime.now(timezone.utc).date()
+    if derive_state(invoice, reference) != "overdue":
+        return 0
+    return (reference - invoice.due_date).days
+
+
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+def _base_query() -> Select:
+    return select(Invoice).options(
+        selectinload(Invoice.lines),
+        selectinload(Invoice.allocations),
+    )
+
+
+async def get_invoice(
+    session: AsyncSession, invoice_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[Invoice]:
+    result = await session.execute(
+        _base_query().where(Invoice.id == invoice_id, Invoice.workspace_id == workspace_id)
+    )
+    return result.unique().scalar_one_or_none()
+
+
+async def list_invoices(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    state: Optional[str] = None,
+    payee_id: Optional[uuid.UUID] = None,
+    q: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Invoice]:
+    """Invoices, newest first, optionally filtered by *derived* state.
+
+    The state filter is applied in Python rather than SQL. That is a
+    deliberate trade for this slice: the derived states depend on summed
+    allocations, and one honest pass over a workspace's invoices beats a
+    correlated subquery that would have to be kept in sync with
+    `derive_state` by hand. When a workspace grows past a few thousand
+    invoices this becomes a materialized balance column — and the single
+    definition here is what makes that change safe.
+    """
+    query = _base_query().where(
+        Invoice.workspace_id == workspace_id,
+        Invoice.document_type == "invoice",
+    )
+    if payee_id:
+        query = query.where(Invoice.payee_id == payee_id)
+    if q:
+        pattern = f"%{q.lower()}%"
+        query = query.where(func.lower(Invoice.notes).like(pattern))
+
+    query = query.order_by(Invoice.issue_date.desc(), Invoice.created_at.desc())
+    result = await session.execute(query)
+    invoices = list(result.unique().scalars().all())
+
+    if state:
+        invoices = [inv for inv in invoices if derive_state(inv) == state]
+    return invoices[offset : offset + limit]
+
+
+async def aging_summary(
+    session: AsyncSession, workspace_id: uuid.UUID, today: Optional[_date] = None
+) -> dict[str, Any]:
+    """A receber · vencidas · recebido no mês · próximos vencimentos.
+
+    Drafts are excluded from every figure — a document nobody has issued
+    is not money anybody owes. Voided and uncollectible invoices are
+    excluded for the same reason, one decision later.
+    """
+    reference = today or datetime.now(timezone.utc).date()
+    result = await session.execute(
+        _base_query().where(
+            Invoice.workspace_id == workspace_id,
+            Invoice.document_type == "invoice",
+            Invoice.status == "open",
+        )
+    )
+    invoices = list(result.unique().scalars().all())
+
+    outstanding = ZERO
+    overdue_amount = ZERO
+    overdue_count = 0
+    upcoming: list[Invoice] = []
+    # Aging buckets in days past due, the shape every accountant expects.
+    buckets = {"current": ZERO, "d1_30": ZERO, "d31_60": ZERO, "d61_90": ZERO, "d90_plus": ZERO}
+
+    for invoice in invoices:
+        remaining = balance(invoice)
+        if remaining <= ZERO:
+            continue
+        outstanding += remaining
+        overdue_days = days_overdue(invoice, reference)
+        if overdue_days > 0:
+            overdue_amount += remaining
+            overdue_count += 1
+            if overdue_days <= 30:
+                buckets["d1_30"] += remaining
+            elif overdue_days <= 60:
+                buckets["d31_60"] += remaining
+            elif overdue_days <= 90:
+                buckets["d61_90"] += remaining
+            else:
+                buckets["d90_plus"] += remaining
+        else:
+            buckets["current"] += remaining
+            upcoming.append(invoice)
+
+    # Money that actually arrived this month, by the date it arrived —
+    # the cash view. The accrual view reads `competence_date` instead,
+    # which is why both are stored.
+    month_start = reference.replace(day=1)
+    received_this_month = ZERO
+    for invoice in invoices:
+        for allocation in invoice.allocations:
+            allocated_on = allocation.allocated_at.date()
+            if month_start <= allocated_on <= reference:
+                received_this_month += allocation.amount
+
+    upcoming.sort(key=lambda i: i.due_date)
+    return {
+        "outstanding": outstanding,
+        "overdue_amount": overdue_amount,
+        "overdue_count": overdue_count,
+        "received_this_month": received_this_month,
+        "buckets": buckets,
+        "upcoming": upcoming[:5],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Writing
+# ---------------------------------------------------------------------------
+def _line_total(quantity: Decimal, unit_price: Decimal) -> Decimal:
+    return (Decimal(quantity) * Decimal(unit_price)).quantize(Decimal("0.01"))
+
+
+def _recompute_totals(invoice: Invoice) -> None:
+    """Totals follow the lines when there are lines, and the caller when
+    there are not.
+
+    Under the `tracking` preset an invoice is three fields — "Fulano me
+    deve R$3.000" — and its total is simply what the user typed. Once
+    lines exist they are the source of truth, because two places holding
+    the same number is how they end up disagreeing.
+    """
+    if not invoice.lines:
+        return
+    subtotal = sum((line.total for line in invoice.lines), ZERO)
+    tax_total = sum(
+        (
+            (line.total * (line.tax_rate or ZERO) / Decimal("100")).quantize(Decimal("0.01"))
+            for line in invoice.lines
+        ),
+        ZERO,
+    )
+    invoice.subtotal = subtotal
+    invoice.tax_total = tax_total
+    invoice.total = subtotal - (invoice.discount or ZERO) + tax_total
+
+
+async def _assert_payee(
+    session: AsyncSession, payee_id: Optional[uuid.UUID], workspace_id: uuid.UUID
+) -> Optional[Payee]:
+    if payee_id is None:
+        return None
+    result = await session.execute(
+        select(Payee).where(Payee.id == payee_id, Payee.workspace_id == workspace_id)
+    )
+    payee = result.scalar_one_or_none()
+    if payee is None:
+        raise InvoiceError("payee_not_found", "Payee not found in this workspace", 404)
+    return payee
+
+
+def _build_line(invoice: Invoice, line: dict[str, Any], position: int) -> InvoiceLine:
+    quantity = Decimal(str(line.get("quantity", 1)))
+    unit_price = Decimal(str(line.get("unit_price", 0)))
+    return InvoiceLine(
+        invoice_id=invoice.id,
+        workspace_id=invoice.workspace_id,
+        description=line["description"],
+        quantity=quantity,
+        unit_price=unit_price,
+        tax_rate=Decimal(str(line["tax_rate"])) if line.get("tax_rate") is not None else None,
+        total=_line_total(quantity, unit_price),
+        position=position,
+    )
+
+
+async def create_invoice(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: dict[str, Any],
+) -> Invoice:
+    settings = await get_settings(session, workspace_id)
+    await _assert_payee(session, data.get("payee_id"), workspace_id)
+
+    lines_data = data.pop("lines", None) or []
+    if settings.document_required and not lines_data:
+        raise InvoiceError(
+            "lines_required", "This workspace requires invoices to carry line items"
+        )
+
+    issue_date = data.get("issue_date") or datetime.now(timezone.utc).date()
+    due_date = data.get("due_date")
+    if due_date is None:
+        due_date = issue_date + timedelta(days=settings.default_payment_terms_days)
+    if due_date < issue_date:
+        raise InvoiceError("due_before_issue", "Due date cannot precede the issue date")
+
+    invoice = Invoice(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        payee_id=data.get("payee_id"),
+        issue_date=issue_date,
+        due_date=due_date,
+        # Defaults to the issue date, and stays its own field so an
+        # accrual-basis report can disagree with the invoice date.
+        competence_date=data.get("competence_date") or issue_date,
+        currency=data.get("currency") or "USD",
+        discount=data.get("discount") or ZERO,
+        subtotal=data.get("subtotal") or ZERO,
+        tax_total=data.get("tax_total") or ZERO,
+        total=data.get("total") or ZERO,
+        notes=data.get("notes"),
+        internal_notes=data.get("internal_notes"),
+        custom_fields=data.get("custom_fields"),
+        status="draft",
+    )
+    session.add(invoice)
+    await session.flush()
+
+    for position, line in enumerate(lines_data):
+        session.add(_build_line(invoice, line, position))
+    await session.flush()
+    await session.refresh(invoice, ["lines", "allocations", "payee"])
+    _recompute_totals(invoice)
+
+    # `open` on creation is the tracking preset's whole point: the money
+    # is already owed, and making the user press "issue" on a note to
+    # self is ceremony.
+    if settings.initial_state == "open":
+        if (invoice.total or ZERO) <= ZERO:
+            raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
+        _issue(invoice, settings)
+
+    await session.flush()
+    return invoice
+
+
+#: Financial substance. Editable while a draft, frozen once issued: the
+#: document has left the building, and a total that changes after the
+#: client received it is not an edit, it is a second document.
+_DRAFT_ONLY_FIELDS = (
+    "payee_id", "issue_date", "due_date", "competence_date", "currency",
+    "discount", "subtotal", "tax_total", "total",
+)
+#: The seller's own record, editable at any time.
+_ALWAYS_EDITABLE = ("notes", "internal_notes", "custom_fields")
+
+
+async def update_invoice(session: AsyncSession, invoice: Invoice, data: dict[str, Any]) -> Invoice:
+    if invoice.status in ("void", "uncollectible"):
+        raise InvoiceError("terminal_status", f"A {invoice.status} invoice cannot be edited")
+
+    if invoice.status == "draft":
+        if data.get("payee_id") is not None:
+            await _assert_payee(session, data["payee_id"], invoice.workspace_id)
+        lines_data = data.pop("lines", None)
+        for field in _DRAFT_ONLY_FIELDS:
+            if data.get(field) is not None:
+                setattr(invoice, field, data[field])
+
+        if lines_data is not None:
+            for line in list(invoice.lines):
+                await session.delete(line)
+            await session.flush()
+            await session.refresh(invoice, ["lines"])
+            for position, line in enumerate(lines_data):
+                session.add(_build_line(invoice, line, position))
+            await session.flush()
+            await session.refresh(invoice, ["lines"])
+            _recompute_totals(invoice)
+
+        if invoice.due_date < invoice.issue_date:
+            raise InvoiceError("due_before_issue", "Due date cannot precede the issue date")
+    else:
+        rejected = {k for k in data if k in _DRAFT_ONLY_FIELDS and data[k] is not None}
+        if rejected or data.get("lines") is not None:
+            raise InvoiceError(
+                "issued_invoice_immutable",
+                "An issued invoice's financial fields cannot change — void it and issue a new one",
+            )
+
+    for field in _ALWAYS_EDITABLE:
+        if field in data:
+            setattr(invoice, field, data[field])
+
+    await session.flush()
+    return invoice
+
+
+def _build_snapshot(invoice: Invoice, settings: InvoiceSettings) -> dict[str, Any]:
+    """Freeze what the document said about itself.
+
+    Read at render time instead of the live settings and the live payee,
+    so changing a logo in September leaves August's invoice exactly as
+    the client received it.
+    """
+    payee = invoice.payee
+    return {
+        "issuer": {
+            "display_name": settings.issuer_display_name,
+            "logo_url": settings.logo_url,
+            "footer_note": settings.footer_note,
+        },
+        "counterparty": {
+            "name": payee.name if payee else None,
+            "email": payee.email if payee else None,
+            "address": payee.address if payee else None,
+        },
+        "template": settings.template or {},
+        "number_prefix": settings.number_prefix,
+        "frozen_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _issue(invoice: Invoice, settings: InvoiceSettings) -> None:
+    """Assign the next number and open the invoice.
+
+    The counter only ever moves forward. A voided invoice keeps the
+    number it consumed: reusing it would put two different documents
+    under one identifier, which every jurisdiction that regulates
+    numbering forbids, and which no jurisdiction that doesn't would
+    thank us for.
+    """
+    invoice.number = settings.next_number
+    invoice.series = settings.series
+    settings.next_number += 1
+    invoice.status = "open"
+    invoice.snapshot = _build_snapshot(invoice, settings)
+
+
+async def issue_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
+    if invoice.status != "draft":
+        raise InvoiceError("not_a_draft", "Only a draft can be issued")
+    settings = await get_settings(session, invoice.workspace_id)
+    if settings.document_required and not invoice.lines:
+        raise InvoiceError("lines_required", "This workspace requires invoices to carry line items")
+    if (invoice.total or ZERO) <= ZERO:
+        raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
+    _issue(invoice, settings)
+    await session.flush()
+    return invoice
+
+
+async def void_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
+    """Cancel an issued invoice, keeping its paper trail.
+
+    Not a delete. The number stays taken, the row stays readable, and
+    every total treats it as zero. Deleting it would leave a gap nobody
+    could explain later — which is precisely what numbering rules exist
+    to prevent.
+    """
+    if invoice.status == "draft":
+        raise InvoiceError("draft_not_voidable", "Delete the draft instead of voiding it")
+    if invoice.status == "void":
+        return invoice
+    if invoice.allocations:
+        raise InvoiceError(
+            "void_with_allocations", "Unlink the payments before voiding this invoice"
+        )
+    invoice.status = "void"
+    await session.flush()
+    return invoice
+
+
+async def mark_uncollectible(session: AsyncSession, invoice: Invoice) -> Invoice:
+    """Give up on collecting. The whole-invoice decision.
+
+    Distinct from a partial write-off, which is a deduction and arrives
+    with the matching work. The two must never coexist on one invoice:
+    one decision, one mechanism.
+    """
+    if invoice.status != "open":
+        raise InvoiceError("not_open", "Only an open invoice can be written off")
+    invoice.status = "uncollectible"
+    await session.flush()
+    return invoice
+
+
+async def reopen_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
+    """Undo an uncollectible decision — the client paid after all."""
+    if invoice.status != "uncollectible":
+        raise InvoiceError("not_uncollectible", "Only an uncollectible invoice can be reopened")
+    invoice.status = "open"
+    await session.flush()
+    return invoice
+
+
+async def delete_invoice(session: AsyncSession, invoice: Invoice) -> None:
+    if invoice.status != "draft":
+        raise InvoiceError(
+            "only_drafts_deletable", "An issued invoice is never deleted — void it instead"
+        )
+    await session.delete(invoice)
+    await session.flush()
+
+
+# ---------------------------------------------------------------------------
+# Allocations
+# ---------------------------------------------------------------------------
+async def allocate(
+    session: AsyncSession,
+    invoice: Invoice,
+    transaction_id: uuid.UUID,
+    amount: Optional[Decimal] = None,
+    method: str = "manual",
+) -> InvoiceAllocation:
+    """Bind money to debt.
+
+    Every guard here is one a user can hit by accident on a normal day,
+    which is why they are guards and not comments.
+    """
+    if invoice.status != "open":
+        raise InvoiceError("not_open", "Only an open invoice can be settled")
+
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.id == transaction_id,
+            Transaction.workspace_id == invoice.workspace_id,
+        )
+    )
+    transaction = result.scalar_one_or_none()
+    if transaction is None:
+        # Same message whether it does not exist or belongs to another
+        # workspace: the second case must not be distinguishable.
+        raise InvoiceError("transaction_not_found", "Transaction not found in this workspace", 404)
+
+    # Same-currency only in this slice, and it fails loudly rather than
+    # silently binding a USD invoice to a BRL inflow at an implied rate
+    # nobody chose. Multi-currency settlement is its own piece of work.
+    if (transaction.currency or invoice.currency) != invoice.currency:
+        raise InvoiceError(
+            "currency_mismatch",
+            f"This invoice is in {invoice.currency} and the transaction is in {transaction.currency}",
+        )
+
+    available = balance(invoice)
+    if available <= ZERO:
+        raise InvoiceError("already_settled", "This invoice is already fully settled")
+
+    # An inflow is a credit; its amount is positive. Defaulting to the
+    # smaller of "what is left" and "what arrived" is what makes the
+    # common case — one payment, one invoice — a single click.
+    incoming = abs(transaction.amount)
+    proposed = Decimal(amount) if amount is not None else min(available, incoming)
+    if proposed <= ZERO:
+        raise InvoiceError("amount_not_positive", "Allocation amount must be positive")
+    if proposed > available:
+        raise InvoiceError("over_allocation", f"Only {available} remains on this invoice")
+
+    allocation = InvoiceAllocation(
+        invoice_id=invoice.id,
+        workspace_id=invoice.workspace_id,
+        transaction_id=transaction_id,
+        amount=proposed,
+        method=method,
+    )
+    session.add(allocation)
+    try:
+        await session.flush()
+    except IntegrityError:
+        raise InvoiceError(
+            "already_allocated", "This transaction is already linked to this invoice"
+        )
+    await session.refresh(invoice, ["allocations"])
+    return allocation
+
+
+async def unallocate(session: AsyncSession, invoice: Invoice, allocation_id: uuid.UUID) -> None:
+    result = await session.execute(
+        select(InvoiceAllocation).where(
+            InvoiceAllocation.id == allocation_id,
+            InvoiceAllocation.invoice_id == invoice.id,
+        )
+    )
+    allocation = result.scalar_one_or_none()
+    if allocation is None:
+        raise InvoiceError("allocation_not_found", "Allocation not found", 404)
+    await session.delete(allocation)
+    await session.flush()
+    await session.refresh(invoice, ["allocations"])
+
+
+async def invoice_links_for_transactions(
+    session: AsyncSession, workspace_id: uuid.UUID, transaction_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Which of these transactions settle an invoice, for the list badge.
+
+    One query for a page of transactions rather than one per row: the
+    transaction list is the hottest screen in the product and this must
+    never become an N+1.
+    """
+    if not transaction_ids:
+        return {}
+    result = await session.execute(
+        select(InvoiceAllocation, Invoice)
+        .join(Invoice, Invoice.id == InvoiceAllocation.invoice_id)
+        .where(
+            InvoiceAllocation.workspace_id == workspace_id,
+            InvoiceAllocation.transaction_id.in_(transaction_ids),
+        )
+    )
+    links: dict[uuid.UUID, dict[str, Any]] = {}
+    for allocation, invoice in result.all():
+        links[allocation.transaction_id] = {
+            "invoice_id": invoice.id,
+            "number": invoice.number,
+            "series": invoice.series,
+            "amount": allocation.amount,
+        }
+    return links

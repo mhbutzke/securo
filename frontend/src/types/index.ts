@@ -977,3 +977,138 @@ export interface ReportResponse {
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
 }
+
+// --- Invoices -------------------------------------------------------------
+// The ledger of what clients owe. Only reachable from a business
+// workspace: the module resolver leaves `invoices` out of a personal
+// workspace's `enabled_modules`, so nothing below is ever fetched there.
+
+/** A decision a human took. Never PATCHed directly — each one has its own
+ *  endpoint, because a status that changed always has a reason. */
+export type InvoiceStatus = 'draft' | 'open' | 'void' | 'uncollectible'
+
+/** What the UI renders. The three terminal decisions above, plus the four
+ *  facts the server computes from allocations and the due date. Nothing
+ *  here is stored in a column. */
+export type InvoiceState =
+  | 'draft'
+  | 'open'
+  | 'partial'
+  | 'paid'
+  | 'overdue'
+  | 'void'
+  | 'uncollectible'
+
+export interface InvoiceLine {
+  id: string
+  description: string
+  quantity: string
+  unit_price: string
+  tax_rate: string | null
+  total: string
+  position: number
+}
+
+export interface InvoiceLineInput {
+  description: string
+  quantity: string
+  unit_price: string
+  tax_rate?: string | null
+}
+
+export interface InvoiceAllocation {
+  id: string
+  transaction_id: string | null
+  credit_note_id: string | null
+  amount: string
+  method: string
+  allocated_at: string
+  transaction: {
+    id: string
+    description: string | null
+    date: string | null
+    amount: string | null
+  } | null
+}
+
+export interface Invoice {
+  id: string
+  payee_id: string | null
+  payee: { id: string; name: string } | null
+  document_type: string
+  origin: string
+  number: number | null
+  series: string | null
+  status: InvoiceStatus
+  state: InvoiceState
+  issue_date: string
+  due_date: string
+  /** The accrual date — competência / fait générateur / Leistungsdatum.
+   *  Defaults to `issue_date` and diverges when work was delivered in a
+   *  different period from the one it was billed in. */
+  competence_date: string | null
+  sent_at: string | null
+  currency: string
+  subtotal: string
+  discount: string
+  tax_total: string
+  total: string
+  amount_paid: string
+  balance: string
+  days_overdue: number
+  notes: string | null
+  internal_notes: string | null
+  custom_fields: Record<string, string> | null
+  /** Frozen at issuance: issuer, counterparty and labels as they were.
+   *  Rendered instead of live settings so changing a logo never rewrites
+   *  a document the client already received. */
+  snapshot: Record<string, any> | null
+  lines: InvoiceLine[]
+  allocations: InvoiceAllocation[]
+  created_at: string
+}
+
+export interface InvoiceAgingBuckets {
+  current: string
+  d1_30: string
+  d31_60: string
+  d61_90: string
+  d90_plus: string
+}
+
+export interface InvoiceSummary {
+  outstanding: string
+  overdue_amount: string
+  overdue_count: number
+  received_this_month: string
+  buckets: InvoiceAgingBuckets
+  upcoming: Invoice[]
+}
+
+export interface InvoiceCustomFieldDef {
+  key: string
+  label: string
+  required?: boolean
+}
+
+export interface InvoiceTemplate {
+  labels?: Record<string, string>
+  custom_fields?: InvoiceCustomFieldDef[]
+}
+
+export interface InvoiceSettings {
+  /** A starting point that fills the next three fields, not a mode: each
+   *  one stays individually overridable afterwards. */
+  preset: 'tracking' | 'document'
+  document_required: boolean
+  initial_state: 'draft' | 'open'
+  tax_fields: 'hidden' | 'optional' | 'required'
+  default_payment_terms_days: number
+  number_prefix: string | null
+  series: string | null
+  next_number: number
+  logo_url: string | null
+  issuer_display_name: string | null
+  footer_note: string | null
+  template: InvoiceTemplate | null
+}

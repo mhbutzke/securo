@@ -19,6 +19,10 @@ import type {
   Transaction,
   Payee,
   PayeeSummary,
+  Invoice,
+  InvoiceLineInput,
+  InvoiceSettings,
+  InvoiceSummary,
   RecurringTransaction,
   ProjectedTransaction,
   TransactionCalendarResponse,
@@ -1659,3 +1663,83 @@ export const agents = {
 }
 
 export default api
+
+// Invoices — business workspaces only. Every route 404s for a workspace
+// without the module, so these are never called from a personal one.
+export interface InvoiceWritePayload {
+  payee_id?: string | null
+  issue_date?: string
+  due_date?: string
+  competence_date?: string | null
+  currency?: string
+  total?: string
+  discount?: string
+  notes?: string | null
+  internal_notes?: string | null
+  custom_fields?: Record<string, string> | null
+  lines?: InvoiceLineInput[]
+}
+
+export const invoices = {
+  list: async (params?: { state?: string; payee_id?: string; q?: string } | Record<string, unknown>): Promise<Invoice[]> => {
+    const cleanParams = params && !('queryKey' in params) ? params : undefined
+    const { data } = await api.get('/invoices', { params: cleanParams })
+    return data
+  },
+  get: async (id: string): Promise<Invoice> => {
+    const { data } = await api.get(`/invoices/${id}`)
+    return data
+  },
+  summary: async (): Promise<InvoiceSummary> => {
+    const { data } = await api.get('/invoices/summary')
+    return data
+  },
+  create: async (payload: InvoiceWritePayload): Promise<Invoice> => {
+    const { data } = await api.post('/invoices', payload)
+    return data
+  },
+  update: async (id: string, payload: InvoiceWritePayload): Promise<Invoice> => {
+    const { data } = await api.patch(`/invoices/${id}`, payload)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/invoices/${id}`)
+  },
+  // The decisions. Each is its own call for the same reason it is its own
+  // route on the server: a status change always has a cause.
+  issue: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/issue`)
+    return data
+  },
+  void: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/void`)
+    return data
+  },
+  writeOff: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/uncollectible`)
+    return data
+  },
+  reopen: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/reopen`)
+    return data
+  },
+  allocate: async (id: string, transactionId: string, amount?: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/allocations`, {
+      transaction_id: transactionId,
+      ...(amount ? { amount } : {}),
+    })
+    return data
+  },
+  unallocate: async (id: string, allocationId: string): Promise<Invoice> => {
+    const { data } = await api.delete(`/invoices/${id}/allocations/${allocationId}`)
+    return data
+  },
+  settings: async (): Promise<InvoiceSettings> => {
+    const { data } = await api.get('/invoices/settings')
+    return data
+  },
+  updateSettings: async (payload: Partial<InvoiceSettings>): Promise<InvoiceSettings> => {
+    const { data } = await api.patch('/invoices/settings', payload)
+    return data
+  },
+}
