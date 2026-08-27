@@ -1071,8 +1071,13 @@ export interface Invoice {
   custom_fields: Record<string, string> | null
   /** Frozen at issuance: issuer, counterparty and labels as they were.
    *  Rendered instead of live settings so changing a logo never rewrites
-   *  a document the client already received. */
-  snapshot: Record<string, any> | null
+   *  a document the client already received.
+   *
+   *  `unknown` rather than `any`: the shape is the server's and it grows
+   *  (locale and payment details joined it after the first version), so
+   *  every reader asserts the one field it wants instead of the type
+   *  quietly promising all of them. */
+  snapshot: Record<string, unknown> | null
   /** Present once a shareable link exists. Null until someone asks for
    *  one, and null again once revoked. */
   share_token: string | null
