@@ -302,6 +302,12 @@ class InvoiceLine(Base):
     )
     description: Mapped[str] = mapped_column(String(500))
     quantity: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=4), default=Decimal("1"))
+    # What the quantity counts — hours, days, pieces, kilos. Free text
+    # rather than a list: a translator bills by word, a photographer by
+    # image, a freight company by tonne-kilometre, and an enum here would
+    # be a guess about somebody else's trade. Null keeps the line reading
+    # exactly as it does today.
+    unit: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
     # A rate, not an amount, and nullable: most workspaces under the
     # `tracking` preset never fill it in.

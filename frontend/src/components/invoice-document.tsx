@@ -265,7 +265,10 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
                 <tr key={index} style={{ borderBottom: `1px solid ${RULE}` }}>
                   <td className="py-3 pr-4 text-[13.5px] leading-snug">{line.description}</td>
                   <td className="py-3 text-right text-[13.5px] tabular-nums">
+                    {/* "12 hours", not "12": the unit is what lets the
+                        reader check the sum against what was agreed. */}
                     {Number(line.quantity)}
+                    {line.unit ? ` ${line.unit}` : ''}
                   </td>
                   <td className="py-3 text-right text-[13.5px] tabular-nums">
                     {money(line.unit_price)}

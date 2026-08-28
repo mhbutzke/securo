@@ -1047,6 +1047,7 @@ export interface InvoiceLine {
   id: string
   description: string
   quantity: string
+  unit: string | null
   unit_price: string
   tax_rate: string | null
   total: string
@@ -1056,6 +1057,9 @@ export interface InvoiceLine {
 export interface InvoiceLineInput {
   description: string
   quantity: string
+  /** What the quantity counts — hours, words, pieces. Free text, because
+   *  a list here would be a guess about somebody else's trade. */
+  unit?: string | null
   unit_price: string
   tax_rate?: string | null
 }
@@ -1220,6 +1224,7 @@ export interface InvoiceDocumentParty {
 export interface InvoiceDocumentLine {
   description: string
   quantity: string
+  unit: string | null
   unit_price: string
   total: string
   tax_rate: string | null

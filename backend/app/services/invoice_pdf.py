@@ -242,9 +242,12 @@ def _lines_table(document: InvoiceDocument) -> Optional[Table]:
     rows = [header]
     for line in document.lines:
         quantity = Decimal(line.quantity).normalize()
+        # "12 hours", not "12": the unit is what lets the person paying
+        # check the arithmetic against what they agreed to.
+        counted = f"{quantity:f} {line.unit}" if line.unit else f"{quantity:f}"
         rows.append([
             _para(line.description),
-            _para(f"{quantity:f}", align=TA_RIGHT),
+            _para(counted, align=TA_RIGHT),
             _para(_money(line.unit_price, document.currency), align=TA_RIGHT),
             _para(_money(line.total, document.currency), align=TA_RIGHT),
         ])

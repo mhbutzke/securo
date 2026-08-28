@@ -179,7 +179,8 @@
       "balance": "Balance",
       "state": "Status",
       "quantity": "Quantity",
-      "supplier": "Supplier"
+      "supplier": "Supplier",
+      "amount": "Betrag"
     },
     "summary": {
       "outstanding": "Outstanding",
@@ -210,7 +211,11 @@
       "lineDescription": "Description",
       "linesOptional": "Optional. Add them to turn this into a printable invoice.",
       "supplier": "Supplier",
-      "paidOut": "Paid out"
+      "paidOut": "Paid out",
+      "unit": "Einheit",
+      "unitPlaceholder": "z. B. Stunden",
+      "lineCount_one": "{{count}} Position",
+      "lineCount_other": "{{count}} Positionen"
     },
     "action": {
       "issue": "Issue",

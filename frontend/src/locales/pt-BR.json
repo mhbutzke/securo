@@ -179,7 +179,8 @@
       "balance": "Saldo",
       "state": "Situação",
       "quantity": "Quantidade",
-      "supplier": "Fornecedor"
+      "supplier": "Fornecedor",
+      "amount": "Valor"
     },
     "summary": {
       "outstanding": "A receber",
@@ -210,7 +211,11 @@
       "lineDescription": "Descrição",
       "linesOptional": "Opcional. Adicione para transformar isto numa fatura imprimível.",
       "supplier": "Fornecedor",
-      "paidOut": "Pago"
+      "paidOut": "Pago",
+      "unit": "Unidade",
+      "unitPlaceholder": "ex.: horas",
+      "lineCount_one": "{{count}} linha",
+      "lineCount_other": "{{count}} linhas"
     },
     "action": {
       "issue": "Emitir",

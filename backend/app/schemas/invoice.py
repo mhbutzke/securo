@@ -29,6 +29,8 @@ TaxFieldsMode = Literal["hidden", "optional", "required"]
 class InvoiceLineInput(BaseModel):
     description: str = Field(..., max_length=500)
     quantity: Decimal = Field(default=Decimal("1"), ge=0)
+    #: What the quantity counts — hours, words, pieces. Free text.
+    unit: Optional[str] = Field(default=None, max_length=20)
     unit_price: Decimal = Field(default=Decimal("0"))
     # A percentage, not an amount — and only meaningful when the
     # workspace shows tax fields at all.
@@ -39,6 +41,7 @@ class InvoiceLineRead(BaseModel):
     id: uuid.UUID
     description: str
     quantity: Decimal
+    unit: Optional[str] = None
     unit_price: Decimal
     tax_rate: Optional[Decimal]
     total: Decimal

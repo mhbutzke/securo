@@ -567,7 +567,14 @@ function CreateInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Widens once there are line items: a table of five columns in a
+          narrow dialog is the cramped row of boxes this used to be. */}
+      <DialogContent
+        className={cn(
+          'flex flex-col max-h-[calc(100dvh-2rem)]',
+          lines.length ? 'sm:max-w-3xl' : 'sm:max-w-lg',
+        )}
+      >
         <DialogHeader>
           <DialogTitle>
             {direction === 'payable' ? t('invoices.newPayable') : t('invoices.new')}

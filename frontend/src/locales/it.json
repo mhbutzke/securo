@@ -179,7 +179,8 @@
       "balance": "Balance",
       "state": "Status",
       "quantity": "Quantity",
-      "supplier": "Supplier"
+      "supplier": "Supplier",
+      "amount": "Importo"
     },
     "summary": {
       "outstanding": "Outstanding",
@@ -210,7 +211,11 @@
       "lineDescription": "Description",
       "linesOptional": "Optional. Add them to turn this into a printable invoice.",
       "supplier": "Supplier",
-      "paidOut": "Paid out"
+      "paidOut": "Paid out",
+      "unit": "Unità",
+      "unitPlaceholder": "es. ore",
+      "lineCount_one": "{{count}} riga",
+      "lineCount_other": "{{count}} righe"
     },
     "action": {
       "issue": "Issue",

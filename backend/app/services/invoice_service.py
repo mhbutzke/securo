@@ -551,6 +551,7 @@ def _build_line(invoice: Invoice, line: dict[str, Any], position: int) -> Invoic
         workspace_id=invoice.workspace_id,
         description=line["description"],
         quantity=quantity,
+        unit=(line.get("unit") or None),
         unit_price=unit_price,
         tax_rate=Decimal(str(line["tax_rate"])) if line.get("tax_rate") is not None else None,
         total=_line_total(quantity, unit_price),

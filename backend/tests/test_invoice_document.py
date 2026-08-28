@@ -935,3 +935,44 @@ async def test_the_shared_page_serves_the_logo_through_its_token(
     served = await client.get(f"/api/public/invoices/{token}/logo")
     assert served.status_code == 200
     assert served.headers["content-type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_a_unit_is_printed_beside_the_quantity(client: AsyncClient, biz_headers):
+    """"32 hours x 180.00" is a claim the payer can check. "32 x 180.00"
+    is one they have to take on trust."""
+    invoice = await make_invoice(
+        client, biz_headers,
+        lines=[{"description": "Desenvolvimento", "quantity": "32", "unit": "horas",
+                "unit_price": "180.00"}],
+        total="5760.00",
+    )
+    doc = (
+        await client.get(f"/api/invoices/{invoice['id']}/document", headers=biz_headers)
+    ).json()
+    assert doc["lines"][0]["unit"] == "horas"
+
+    import io as _io
+
+    import pypdf as _pypdf
+
+    pdf = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    text = _pypdf.PdfReader(_io.BytesIO(pdf.content)).pages[0].extract_text()
+    assert "32 horas" in text
+
+
+@pytest.mark.asyncio
+async def test_a_line_without_a_unit_reads_as_it_always_did(
+    client: AsyncClient, biz_headers
+):
+    """Optional means optional: nothing is invented for a line that
+    counts nothing in particular."""
+    invoice = await make_invoice(
+        client, biz_headers,
+        lines=[{"description": "Projeto fechado", "quantity": "1", "unit_price": "900.00"}],
+        total="900.00",
+    )
+    doc = (
+        await client.get(f"/api/invoices/{invoice['id']}/document", headers=biz_headers)
+    ).json()
+    assert doc["lines"][0]["unit"] is None

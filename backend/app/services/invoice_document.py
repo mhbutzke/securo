@@ -216,6 +216,10 @@ class DocumentLine:
     unit_price: Decimal
     total: Decimal
     tax_rate: Optional[Decimal] = None
+    #: Printed beside the quantity: "12 hours", not "12". Last and
+    #: defaulted so the positional constructions already in the tests
+    #: keep meaning what they meant.
+    unit: Optional[str] = None
 
 
 @dataclass
@@ -404,6 +408,8 @@ async def build_document(
             DocumentLine(
                 description=line.description,
                 quantity=line.quantity,
+                unit=line.unit,
+
                 unit_price=line.unit_price,
                 total=line.total,
                 tax_rate=line.tax_rate,
@@ -486,6 +492,7 @@ def document_payload(document: InvoiceDocument) -> dict[str, Any]:
             {
                 "description": line.description,
                 "quantity": str(line.quantity),
+                "unit": line.unit,
                 "unit_price": str(line.unit_price),
                 "total": str(line.total),
                 "tax_rate": str(line.tax_rate) if line.tax_rate is not None else None,
