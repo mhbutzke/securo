@@ -405,3 +405,51 @@ class TestCompetenceDate:
         invoice = await create(session, workspace, test_user, competence_date=delivered)
         assert invoice.competence_date == delivered
         assert invoice.issue_date != delivered
+
+
+@pytest.mark.asyncio
+class TestAllocationProvenance:
+    """`method` records who or what decided, and it is not an enum.
+
+    The ids come from the reconciliation policy — a document the user will
+    eventually edit — so closing this set would mean a migration every time
+    somebody adds a strategy.
+    """
+
+    async def test_a_strategy_id_round_trips(
+        self, session: AsyncSession, workspace, test_user, credit
+    ):
+        # The longest id in the shipped policy is 30 characters, which the
+        # column was originally too narrow to hold.
+        strategy = "same_client_net_of_withholding"
+        assert len(strategy) > 20
+
+        invoice = await create(session, workspace, test_user)
+        await svc.allocate(session, invoice, credit.id, Decimal("100.00"), method=strategy)
+        await session.commit()
+        await session.refresh(invoice, ["allocations"])
+        assert invoice.allocations[0].method == strategy
+
+    async def test_manual_is_the_default(
+        self, session: AsyncSession, workspace, test_user, credit
+    ):
+        from app.models.invoice import MANUAL_METHOD
+
+        invoice = await create(session, workspace, test_user)
+        await svc.allocate(session, invoice, credit.id, Decimal("100.00"))
+        await session.commit()
+        await session.refresh(invoice, ["allocations"])
+        assert invoice.allocations[0].method == MANUAL_METHOD
+
+    async def test_an_automatic_decision_is_not_a_trusted_one(
+        self, session: AsyncSession, workspace, test_user, credit
+    ):
+        """Every guard runs regardless of who decided. A matcher that could
+        over-allocate by claiming to be automatic would be a matcher that
+        can corrupt the ledger."""
+        invoice = await create(session, workspace, test_user, total=Decimal("100.00"))
+        with pytest.raises(svc.InvoiceError) as exc:
+            await svc.allocate(
+                session, invoice, credit.id, Decimal("500.00"), method="same_client_exact"
+            )
+        assert exc.value.code == "over_allocation"

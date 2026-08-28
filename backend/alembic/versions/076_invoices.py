@@ -148,10 +148,12 @@ def upgrade() -> None:
         sa.Column("transaction_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("credit_note_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("amount", sa.Numeric(precision=15, scale=2), nullable=False),
-        # How the link came to exist. `manual` is the only writer today;
-        # the automatic tiers land with payment matching, and the column
-        # is here so "who linked this?" is answerable from day one.
-        sa.Column("method", sa.String(length=20), nullable=False, server_default="manual"),
+        # How the link came to exist: `manual`, or the id of the matching
+        # strategy that produced the row. Sized for a strategy id rather
+        # than an enum value, and left without a CHECK on purpose — those
+        # ids come from a policy document the user will edit, so
+        # constraining them here would mean a migration per strategy.
+        sa.Column("method", sa.String(length=60), nullable=False, server_default="manual"),
         sa.Column("allocated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["invoice_id"], ["invoices.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),

@@ -125,3 +125,27 @@ export function invoiceErrorKey(error: unknown): string | null {
   const code = detail && typeof detail === 'object' ? detail.code : undefined
   return code ? `invoices.errors.${code}` : null
 }
+
+/** A person, not a strategy. Mirrors `MANUAL_METHOD` on the server. */
+export const MANUAL_METHOD = 'manual'
+
+/**
+ * How to describe the origin of an allocation.
+ *
+ * `method` is either `manual` or the **id of the matching strategy** that
+ * produced the link — ids that come from the reconciliation policy, a
+ * document that will eventually be user-editable. So this deliberately
+ * does not switch on a closed list: it separates "a person did this" from
+ * "a rule did this", and hands the id back so the caller can show *which*
+ * rule once the policy is readable from the client.
+ *
+ * Until then an unknown id still reads as an explanation rather than as a
+ * mystery, which is the whole reason the column stores it.
+ */
+export function allocationOrigin(method: string): {
+  automatic: boolean
+  strategyId: string | null
+} {
+  const automatic = method !== MANUAL_METHOD
+  return { automatic, strategyId: automatic ? method : null }
+}

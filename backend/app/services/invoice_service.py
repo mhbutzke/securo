@@ -24,7 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
-from app.models.invoice import Invoice, InvoiceAllocation, InvoiceLine, InvoiceSettings
+from app.models.invoice import (
+    MANUAL_METHOD,
+    Invoice,
+    InvoiceAllocation,
+    InvoiceLine,
+    InvoiceSettings,
+)
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace, WorkspaceTaxId
@@ -753,12 +759,19 @@ async def allocate(
     invoice: Invoice,
     transaction_id: uuid.UUID,
     amount: Optional[Decimal] = None,
-    method: str = "manual",
+    method: str = MANUAL_METHOD,
 ) -> InvoiceAllocation:
-    """Bind money to debt.
+    """Bind money to debt. **This is the apply step, never the deciding one.**
 
-    Every guard here is one a user can hit by accident on a normal day,
-    which is why they are guards and not comments.
+    Automatic matching will decide in a separate, pure function that reads
+    the reconciliation policy and returns a decision plus a trace; this is
+    what it calls once a human or that decision has settled the question.
+    Keeping the two apart is what lets the matcher be dry-run and previewed
+    later, which a step that writes can never be.
+
+    `method` records *who or what* decided: `manual`, or the id of the
+    strategy that fired. The guards below run either way — an automatic
+    decision is not a trusted one.
     """
     if invoice.status != "open":
         raise InvoiceError("not_open", "Only an open invoice can be settled")

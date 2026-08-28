@@ -72,10 +72,19 @@ INVOICE_DOCUMENT_TYPES = ("invoice", "credit_note")
 #: and Securo owns the cash that settled it.
 INVOICE_ORIGINS = ("local", "imported")
 
-#: How an allocation came to exist. `manual` is a person pointing at a
-#: transaction; T6 adds the two automatic tiers, and the column exists now
-#: so the audit question ("who linked this?") is answerable from day one.
-ALLOCATION_METHODS = ("manual", "payee_join", "exact")
+#: How an allocation came to exist.
+#:
+#: Deliberately **not** a closed set. `manual` is a person pointing at a
+#: transaction; everything else is the **id of the matching strategy that
+#: produced the row**, and those ids come from the reconciliation policy —
+#: a document the user will eventually edit, not an enum this file owns.
+#: Closing this tuple would mean a migration every time somebody adds a
+#: strategy, which is the opposite of the point.
+#:
+#: What it buys: the ledger can answer *why* a link exists and not merely
+#: that it does. "Matched by: same client, net of withholding" is a
+#: sentence; `payee_join` was a shrug.
+MANUAL_METHOD = "manual"
 
 
 class Invoice(Base):
@@ -295,7 +304,9 @@ class InvoiceAllocation(Base):
         UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
-    method: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
+    # Wide enough for a strategy id, not for an enum value: the policy's
+    # own ids already run to 30 characters. See `MANUAL_METHOD`.
+    method: Mapped[str] = mapped_column(String(60), default="manual", server_default="manual")
     allocated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

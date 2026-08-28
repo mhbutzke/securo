@@ -56,6 +56,7 @@ import {
   transactions as transactionsApi,
 } from '@/lib/api'
 import {
+  allocationOrigin,
   availableActions,
   customFieldDefs,
   displayNumber,
@@ -535,9 +536,19 @@ export default function InvoiceDetailPage() {
                             ? showDate(allocation.transaction.date)
                             : ''}
                           {' · '}
-                          {allocation.method === 'manual'
-                            ? t('invoices.linkedManually')
-                            : t('invoices.linkedAutomatically')}
+                          {(() => {
+                            const origin = allocationOrigin(allocation.method)
+                            if (!origin.automatic) return t('invoices.linkedManually')
+                            // The strategy id is shown as the title rather
+                            // than the label: it is a machine name today
+                            // and becomes a readable one when the policy
+                            // is fetchable, without this line changing.
+                            return (
+                              <span title={origin.strategyId ?? undefined}>
+                                {t('invoices.linkedAutomatically')}
+                              </span>
+                            )
+                          })()}
                         </div>
                       </td>
                       <td className="py-3 text-right text-sm font-bold tabular-nums text-emerald-600">
