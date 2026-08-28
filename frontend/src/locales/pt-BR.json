@@ -353,7 +353,9 @@
       "notOursHint": "Anexe o arquivo que você recebeu e ele será mostrado aqui, exatamente como chegou.",
       "ourPage": "Fatura",
       "rendered": "Página gerada",
-      "kindLabel": "Tipo de documento"
+      "kindLabel": "Tipo de documento",
+      "fromSystem": "De {{source}} · {{date}}",
+      "fromUpload": "Enviado · {{date}}"
     }
   },
   "collections": {

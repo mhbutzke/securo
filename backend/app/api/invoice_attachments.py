@@ -32,6 +32,9 @@ async def upload_attachment(
     invoice_id: uuid.UUID,
     file: UploadFile,
     kind: str = Form("other"),
+    #: Which system produced the file. Omitted when a person uploads one.
+    source: Optional[str] = Form(None),
+    external_id: Optional[str] = Form(None),
     document_number: Optional[str] = Form(None),
     issued_at: Optional[_date] = Form(None),
     is_primary: Optional[bool] = Form(None),
@@ -48,6 +51,8 @@ async def upload_attachment(
             content_type=file.content_type or "application/octet-stream",
             data=await file.read(),
             kind=kind,
+            source=source,
+            external_id=external_id,
             document_number=document_number,
             issued_at=issued_at,
             is_primary=is_primary,

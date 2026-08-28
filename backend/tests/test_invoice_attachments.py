@@ -282,3 +282,54 @@ async def test_an_import_with_nothing_filed_has_no_pdf_to_give(
     resp = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
     assert resp.status_code == 200
     assert "recebida.pdf" in resp.headers["content-disposition"]
+
+
+# ---------------------------------------------------------------------------
+# Where each file came from
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_folder_records_which_system_produced_each_file(
+    client: AsyncClient, biz_headers
+):
+    """The point of the column: an invoice assembled from three systems is
+    otherwise a pile of files with no author."""
+    invoice = await make_invoice(client, biz_headers)
+    await upload(client, biz_headers, invoice["id"], filename="cobranca.pdf",
+                 kind="bill", source="stripe", external_id="in_1AbC")
+    await upload(client, biz_headers, invoice["id"], filename="nfe.pdf",
+                 kind="fiscal", source="nfe-provider", external_id="35260812345678")
+    await upload(client, biz_headers, invoice["id"], filename="anexo.pdf", kind="other")
+
+    rows = (
+        await client.get(f"/api/invoices/{invoice['id']}/attachments", headers=biz_headers)
+    ).json()
+    assert [(r["filename"], r["source"]) for r in rows] == [
+        ("cobranca.pdf", "stripe"),
+        ("nfe.pdf", "nfe-provider"),
+        # A person uploaded this one, and no source is how that is said.
+        ("anexo.pdf", None),
+    ]
+    # Every file records when it reached us, which is not the date on it.
+    assert all(r["created_at"] for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_two_hand_uploads_do_not_collide(client: AsyncClient, biz_headers):
+    """The uniqueness is per source, and a null source is not a value two
+    rows can collide on — otherwise a second manual upload would fail."""
+    invoice = await make_invoice(client, biz_headers)
+    first = await upload(client, biz_headers, invoice["id"], filename="a.pdf")
+    second = await upload(client, biz_headers, invoice["id"], filename="b.pdf")
+    assert first.status_code == 201 and second.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_a_source_can_be_corrected(client: AsyncClient, biz_headers):
+    invoice = await make_invoice(client, biz_headers)
+    filed = (await upload(client, biz_headers, invoice["id"])).json()
+    resp = await client.patch(
+        f"/api/invoices/{invoice['id']}/attachments/{filed['id']}",
+        headers=biz_headers,
+        json={"source": "email"},
+    )
+    assert resp.json()["source"] == "email"

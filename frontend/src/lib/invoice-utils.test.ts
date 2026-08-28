@@ -6,6 +6,7 @@ import {
   customFieldDefs,
   daysUntilDue,
   displayNumber,
+  documentProvenance,
   documentSource,
   formatFileSize,
   invoiceErrorKey,
@@ -332,5 +333,21 @@ describe('documentSource', () => {
     // standing in for a document a supplier issued, is an invention.
     expect(documentSource('imported', null)).toBe('missing')
     expect(documentSource('imported', undefined)).toBe('missing')
+  })
+})
+
+
+describe('documentProvenance', () => {
+  it('names the system that delivered the file, as that system names itself', () => {
+    // Not translated: renaming somebody's integration in our own words
+    // helps nobody working out which one delivered which file.
+    expect(documentProvenance('stripe')).toEqual({ kind: 'system', name: 'stripe' })
+    expect(documentProvenance('nfe-provider')).toEqual({ kind: 'system', name: 'nfe-provider' })
+  })
+
+  it('treats no source as a person having uploaded it', () => {
+    expect(documentProvenance(null)).toEqual({ kind: 'uploaded' })
+    expect(documentProvenance(undefined)).toEqual({ kind: 'uploaded' })
+    expect(documentProvenance('   ')).toEqual({ kind: 'uploaded' })
   })
 })

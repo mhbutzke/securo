@@ -76,6 +76,18 @@ class InvoiceAttachment(Base):
             postgresql_where=text("is_primary"),
             sqlite_where=text("is_primary"),
         ),
+        # One row per file per source. Partial, because a null external id
+        # is "this system does not name its files", not a value two rows
+        # can collide on — and hand-uploaded files have no source at all.
+        Index(
+            "uq_invoice_attachments_external",
+            "workspace_id",
+            "source",
+            "external_id",
+            unique=True,
+            postgresql_where=text("source IS NOT NULL AND external_id IS NOT NULL"),
+            sqlite_where=text("source IS NOT NULL AND external_id IS NOT NULL"),
+        ),
         CheckConstraint(
             "kind IN ('bill', 'fiscal', 'receipt', 'contract', 'other')",
             name="ck_invoice_attachments_kind",
@@ -93,6 +105,23 @@ class InvoiceAttachment(Base):
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+
+    # Where the file came from, and its name over there.
+    #
+    # An invoice assembled from several systems — the bill from a payment
+    # provider, the fiscal document from a government portal, a receipt
+    # forwarded by email — is a folder whose contents have different
+    # authors. Without this the folder is a pile: three files, no way to
+    # say which system produced which, or to recognise one already
+    # collected when that system syncs again.
+    #
+    # Null means a person uploaded it here. Everything else is the id of
+    # the system that produced or delivered it.
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # The file's id in that system, when it has one. Paired with `source`
+    # it is what makes a second sync converge on the row it already wrote
+    # rather than filing a duplicate.
+    external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     kind: Mapped[str] = mapped_column(String(20), default="other", server_default="other")
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

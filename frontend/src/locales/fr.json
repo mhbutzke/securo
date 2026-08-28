@@ -353,7 +353,9 @@
       "notOursHint": "Joignez le fichier que vous avez reçu et il s'affichera ici, tel qu'il est arrivé.",
       "ourPage": "Facture",
       "rendered": "Page générée",
-      "kindLabel": "Type de document"
+      "kindLabel": "Type de document",
+      "fromSystem": "De {{source}} · {{date}}",
+      "fromUpload": "Importé · {{date}}"
     }
   },
   "collections": {

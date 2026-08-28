@@ -353,7 +353,9 @@
       "notOursHint": "Hängen Sie die erhaltene Datei an, dann wird sie hier genau so angezeigt, wie sie eingegangen ist.",
       "ourPage": "Rechnung",
       "rendered": "Erzeugte Seite",
-      "kindLabel": "Dokumenttyp"
+      "kindLabel": "Dokumenttyp",
+      "fromSystem": "Von {{source}} · {{date}}",
+      "fromUpload": "Hochgeladen · {{date}}"
     }
   },
   "collections": {

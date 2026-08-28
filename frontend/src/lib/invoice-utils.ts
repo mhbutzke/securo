@@ -191,3 +191,18 @@ export function documentSource(
   if (sourceFile) return 'filed'
   return origin === 'imported' ? 'missing' : 'rendered'
 }
+
+/** Where a filed document came from, as a person reads it.
+ *
+ *  A source id is a machine name (`stripe`, `nfe`, `email`), so it is
+ *  shown as it is rather than translated — renaming somebody's system in
+ *  our own words helps nobody trying to work out which integration
+ *  delivered which file. Only the absence of one is our word: a file
+ *  with no source was uploaded here by hand.
+ */
+export function documentProvenance(
+  source: string | null | undefined,
+): { kind: 'uploaded' } | { kind: 'system'; name: string } {
+  const name = (source ?? '').trim()
+  return name ? { kind: 'system', name } : { kind: 'uploaded' }
+}

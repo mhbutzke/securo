@@ -51,6 +51,27 @@ async def _clear_primary(session: AsyncSession, invoice_id: uuid.UUID) -> None:
     await session.flush()
 
 
+async def find_by_external_id(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    source: str,
+    external_id: str,
+) -> Optional[InvoiceAttachment]:
+    """The row a previous sync of the same file already wrote, if any.
+
+    What keeps a second run of an integration from filing the same fiscal
+    document twice under one invoice.
+    """
+    result = await session.execute(
+        select(InvoiceAttachment).where(
+            InvoiceAttachment.workspace_id == workspace_id,
+            InvoiceAttachment.source == source,
+            InvoiceAttachment.external_id == external_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def upload(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -60,6 +81,8 @@ async def upload(
     content_type: str,
     data: bytes,
     kind: str = "other",
+    source: Optional[str] = None,
+    external_id: Optional[str] = None,
     document_number: Optional[str] = None,
     issued_at: Optional[_date] = None,
     is_primary: Optional[bool] = None,
@@ -104,6 +127,8 @@ async def upload(
         invoice_id=invoice_id,
         workspace_id=workspace_id,
         user_id=user_id,
+        source=(source or None),
+        external_id=(external_id or None),
         kind=kind,
         is_primary=bool(is_primary),
         document_number=(document_number or None),
@@ -184,6 +209,8 @@ async def update(
         if data["kind"] not in ATTACHMENT_KINDS:
             raise ValueError(f"Unknown document kind '{data['kind']}'.")
         attachment.kind = data["kind"]
+    if "source" in data:
+        attachment.source = data["source"] or None
     if "document_number" in data:
         attachment.document_number = data["document_number"] or None
     if "issued_at" in data:

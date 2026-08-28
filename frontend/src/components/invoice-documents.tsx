@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { invoices as invoicesApi } from '@/lib/api'
-import { formatFileSize, previewKind } from '@/lib/invoice-utils'
+import { documentProvenance, formatFileSize, previewKind } from '@/lib/invoice-utils'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { cn } from '@/lib/utils'
 import type { InvoiceAttachment, InvoiceAttachmentKind } from '@/types'
@@ -123,6 +123,14 @@ export function InvoiceDocumentBrowser({
 
   const showDate = (value: string) =>
     new Date(`${value}T00:00:00`).toLocaleDateString(dateLocale)
+  /** When the file reached us, which is rarely the date on the document
+   *  itself — an integration can deliver a nota fiscal weeks late. */
+  const showDateTime = (value: string) =>
+    new Date(value).toLocaleDateString(dateLocale, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
 
   const activeAttachment =
     active && active !== OUR_PAGE ? attachments.find((a) => a.id === active) : undefined
@@ -217,6 +225,13 @@ export function InvoiceDocumentBrowser({
                     .filter(Boolean)
                     .join(' · ')}
                   reference={attachment.document_number}
+                  provenance={(() => {
+                    const from = documentProvenance(attachment.source)
+                    const arrived = showDateTime(attachment.created_at)
+                    return from.kind === 'system'
+                      ? t('invoices.documents.fromSystem', { source: from.name, date: arrived })
+                      : t('invoices.documents.fromUpload', { date: arrived })
+                  })()}
                   isPrimary={attachment.is_primary}
                   actions={
                     canWrite ? (
@@ -290,6 +305,7 @@ function ShelfItem({
   title,
   subtitle,
   reference,
+  provenance,
   isPrimary,
   actions,
 }: {
@@ -299,6 +315,9 @@ function ShelfItem({
   title: string
   subtitle: string
   reference?: string | null
+  /** Which system delivered the file and when it arrived. Absent on our
+   *  own generated page, which was not delivered by anybody. */
+  provenance?: string
   /** True on the file the download hands over. Shown as a filled star —
    *  the same mark the button on the other rows sets, so the flag and the
    *  way to move it read as one thing rather than two. */
@@ -324,6 +343,11 @@ function ShelfItem({
           {reference && (
             <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5 tabular-nums">
               {reference}
+            </span>
+          )}
+          {provenance && (
+            <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5">
+              {provenance}
             </span>
           )}
         </span>

@@ -1082,6 +1082,12 @@ export type InvoiceAttachmentKind = 'bill' | 'fiscal' | 'receipt' | 'contract' |
 export interface InvoiceAttachment {
   id: string
   invoice_id: string
+  /** The system that produced or delivered the file — a payment
+   *  provider, a fiscal-document integration, a mailbox. Null when a
+   *  person uploaded it here. */
+  source: string | null
+  /** Its id in that system, when it has one. */
+  external_id: string | null
   kind: InvoiceAttachmentKind
   /** True on the one file that *is* the document. Downloading the invoice
    *  hands this file over instead of a page drawn from our own fields. */

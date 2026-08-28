@@ -353,7 +353,9 @@
       "notOursHint": "Attach the file you received and it will be shown here, exactly as it arrived.",
       "ourPage": "Invoice",
       "rendered": "Generated page",
-      "kindLabel": "Document type"
+      "kindLabel": "Document type",
+      "fromSystem": "From {{source}} · {{date}}",
+      "fromUpload": "Uploaded · {{date}}"
     }
   },
   "collections": {

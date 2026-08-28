@@ -353,7 +353,9 @@
       "notOursHint": "Voeg het ontvangen bestand toe, dan wordt het hier getoond zoals het binnenkwam.",
       "ourPage": "Factuur",
       "rendered": "Gegenereerde pagina",
-      "kindLabel": "Documenttype"
+      "kindLabel": "Documenttype",
+      "fromSystem": "Van {{source}} · {{date}}",
+      "fromUpload": "Geüpload · {{date}}"
     }
   },
   "collections": {

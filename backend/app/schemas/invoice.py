@@ -305,6 +305,10 @@ InvoiceAttachmentKind = Literal["bill", "fiscal", "receipt", "contract", "other"
 class InvoiceAttachmentRead(BaseModel):
     id: uuid.UUID
     invoice_id: uuid.UUID
+    #: The system that produced or delivered the file. Null when a person
+    #: uploaded it here.
+    source: Optional[str] = None
+    external_id: Optional[str] = None
     kind: str
     #: True on the one file that *is* the document. What `/pdf` serves and
     #: what the screen shows instead of a page drawn from our own fields.
@@ -321,6 +325,7 @@ class InvoiceAttachmentRead(BaseModel):
 
 class InvoiceAttachmentUpdate(BaseModel):
     kind: Optional[InvoiceAttachmentKind] = None
+    source: Optional[str] = Field(default=None, max_length=50)
     document_number: Optional[str] = Field(default=None, max_length=120)
     issued_at: Optional[_Date] = None
     is_primary: Optional[bool] = None

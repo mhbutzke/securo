@@ -353,7 +353,9 @@
       "notOursHint": "Allega il file che hai ricevuto e verrà mostrato qui, esattamente come è arrivato.",
       "ourPage": "Fattura",
       "rendered": "Pagina generata",
-      "kindLabel": "Tipo di documento"
+      "kindLabel": "Tipo di documento",
+      "fromSystem": "Da {{source}} · {{date}}",
+      "fromUpload": "Caricato · {{date}}"
     }
   },
   "collections": {
