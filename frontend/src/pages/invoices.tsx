@@ -54,6 +54,7 @@ import {
 } from '@/lib/invoice-utils'
 import type {
   Invoice,
+  InvoiceDirection,
   InvoiceLineInput,
   InvoiceTemplate,
   IssuerTaxId,
@@ -95,6 +96,10 @@ export default function InvoicesPage() {
 
   // `null` is "every year". The default is the current one, which is
   // what someone opening the page is almost always asking about.
+  // Which ledger is on screen. A bigger axis than the state filter — the
+  // totals above the list change with it — so it sits above the summary
+  // rather than among the filters.
+  const [direction, setDirection] = useState<InvoiceDirection>('receivable')
   const [year, setYear] = useState<number | null>(() => new Date().getFullYear())
   const [filter, setFilter] = useState<Filter>('all')
   const [createOpen, setCreateOpen] = useState(false)
@@ -105,17 +110,18 @@ export default function InvoicesPage() {
     queryFn: invoicesApi.settings,
   })
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['invoice-summary'],
-    queryFn: invoicesApi.summary,
+    queryKey: ['invoice-summary', direction],
+    queryFn: () => invoicesApi.summary(direction),
   })
   const { data: facets } = useQuery({
-    queryKey: ['invoice-facets', year],
-    queryFn: () => invoicesApi.facets(year ?? undefined),
+    queryKey: ['invoice-facets', year, direction],
+    queryFn: () => invoicesApi.facets(year ?? undefined, direction),
   })
   const { data: list, isLoading } = useQuery({
-    queryKey: ['invoices', filter, year],
+    queryKey: ['invoices', filter, year, direction],
     queryFn: () =>
       invoicesApi.list({
+        direction,
         // `open` spans three derived states, so it is filtered here
         // rather than asked for three times.
         ...(filter === 'all' || filter === 'open' ? {} : { state: filter }),
@@ -160,12 +166,24 @@ export default function InvoicesPage() {
             {canWrite && (
               <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="invoice-new-button">
                 <Plus className="h-4 w-4 mr-1.5" />
-                {t('invoices.new')}
+                {direction === 'payable' ? t('invoices.newPayable') : t('invoices.new')}
               </Button>
             )}
           </div>
         }
       />
+
+      <div className="mb-4">
+        <Segmented<InvoiceDirection>
+          value={direction}
+          onChange={setDirection}
+          testIdPrefix="invoice-direction"
+          options={[
+            { value: 'receivable', label: t('invoices.direction.receivable') },
+            { value: 'payable', label: t('invoices.direction.payable') },
+          ]}
+        />
+      </div>
 
       {/* One block, in the dashboard's shape: a headline figure with its
           supporting numbers beside it, and the accountant's view of the
@@ -174,7 +192,9 @@ export default function InvoicesPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3">
           <div className="lg:col-span-2 px-5 py-4">
             <p className="text-xs font-medium text-muted-foreground mb-0.5">
-              {t('invoices.summary.outstanding')}
+              {direction === 'payable'
+                ? t('invoices.summary.owed')
+                : t('invoices.summary.outstanding')}
             </p>
             {summaryLoading ? (
               <Skeleton className="h-10 w-40" />
@@ -206,7 +226,9 @@ export default function InvoicesPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-0.5">
-                  {t('invoices.summary.receivedThisMonth')}
+                  {direction === 'payable'
+                    ? t('invoices.summary.paidThisMonth')
+                    : t('invoices.summary.receivedThisMonth')}
                 </p>
                 <p className="text-sm font-bold tabular-nums text-emerald-600" data-testid="summary-received">
                   {money(summary?.received_this_month)}
@@ -363,7 +385,11 @@ export default function InvoicesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.column.client')}</th>
+                  <th className={`${TH} pl-4 sm:pl-5 text-left`}>
+                    {direction === 'payable'
+                      ? t('invoices.column.supplier')
+                      : t('invoices.column.client')}
+                  </th>
                   <th className={`${TH} text-left w-24 hidden sm:table-cell`}>
                     {t('invoices.column.number')}
                   </th>
@@ -390,7 +416,11 @@ export default function InvoicesPage() {
                     <td className="py-3 pl-4 sm:pl-5">
                       <div className="text-sm font-medium text-foreground truncate">
                         {invoice.payee?.name ?? (
-                          <span className="text-muted-foreground">{t('invoices.noClient')}</span>
+                          <span className="text-muted-foreground">
+                            {direction === 'payable'
+                              ? t('invoices.noSupplier')
+                              : t('invoices.noClient')}
+                          </span>
                         )}
                       </div>
                       {/* The number and date fold in here on small screens
@@ -440,6 +470,7 @@ export default function InvoicesPage() {
       <CreateInvoiceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
+        direction={direction}
         onCreated={(invoice) => navigate(`/invoices/${invoice.id}`)}
       />
       <InvoiceSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
@@ -450,10 +481,15 @@ export default function InvoicesPage() {
 function CreateInvoiceDialog({
   open,
   onOpenChange,
+  direction,
   onCreated,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Taken from the list rather than asked again: the user already chose
+   *  a ledger to be looking at, and asking twice is asking them to repeat
+   *  themselves. */
+  direction: InvoiceDirection
   onCreated: (invoice: Invoice) => void
 }) {
   const { t } = useTranslation()
@@ -483,6 +519,7 @@ function CreateInvoiceDialog({
   const mutation = useMutation({
     mutationFn: () =>
       invoicesApi.create({
+        direction,
         payee_id: payeeId || null,
         // Lines are the source of truth once they exist: the server
         // recomputes the total from them and ignores what was typed.
@@ -518,15 +555,25 @@ function CreateInvoiceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{t('invoices.new')}</DialogTitle>
+          <DialogTitle>
+            {direction === 'payable' ? t('invoices.newPayable') : t('invoices.new')}
+          </DialogTitle>
           {/* Three fields is the whole point under the tracking preset:
               the money is already owed, and the document lives elsewhere. */}
-          <DialogDescription>{t('invoices.newDescription')}</DialogDescription>
+          <DialogDescription>
+            {direction === 'payable'
+              ? t('invoices.newPayableDescription')
+              : t('invoices.newDescription')}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>{t('invoices.field.client')}</Label>
+            <Label>
+              {direction === 'payable'
+                ? t('invoices.field.supplier')
+                : t('invoices.field.client')}
+            </Label>
             <Select value={payeeId} onValueChange={setPayeeId}>
               <SelectTrigger data-testid="invoice-client-select">
                 <SelectValue placeholder={t('invoices.field.clientPlaceholder')} />

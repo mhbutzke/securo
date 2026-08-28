@@ -178,7 +178,8 @@
       "total": "Total",
       "balance": "Balance",
       "state": "Status",
-      "quantity": "Quantity"
+      "quantity": "Quantity",
+      "supplier": "Supplier"
     },
     "summary": {
       "outstanding": "Outstanding",
@@ -188,7 +189,9 @@
       "aging": "By age",
       "nothingDue": "Nothing outstanding.",
       "overdueCount_one": "on {{count}} invoice",
-      "overdueCount_other": "on {{count}} invoices"
+      "overdueCount_other": "on {{count}} invoices",
+      "owed": "Owed",
+      "paidThisMonth": "Paid this month"
     },
     "field": {
       "client": "Client",
@@ -205,7 +208,9 @@
       "unitPrice": "Unit price",
       "taxRate": "Tax rate",
       "lineDescription": "Description",
-      "linesOptional": "Optional. Add them to turn this into a printable invoice."
+      "linesOptional": "Optional. Add them to turn this into a printable invoice.",
+      "supplier": "Supplier",
+      "paidOut": "Paid out"
     },
     "action": {
       "issue": "Issue",
@@ -266,7 +271,9 @@
       "not_uncollectible": "Only an uncollectible invoice can be reopened.",
       "amount_not_positive": "The amount must be greater than zero.",
       "allocation_not_found": "Payment link not found.",
-      "draft_not_shareable": "Issue the invoice before sharing it."
+      "draft_not_shareable": "Issue the invoice before sharing it.",
+      "external_source_required": "An imported document must say where it came from.",
+      "payable_not_shareable": "A bill you received cannot be shared."
     },
     "comingNext": "Wystawiaj faktury klientom i śledź, co zostało zapłacone, a co wciąż jest otwarte. To następna rzecz w budowie.",
     "document": {
@@ -311,7 +318,17 @@
     },
     "editDraft": "Edit draft",
     "updated": "Invoice updated",
-    "editDraftDescription": "Only drafts can change. Once issued, void it and issue a new one."
+    "editDraftDescription": "Only drafts can change. Once issued, void it and issue a new one.",
+    "direction": {
+      "receivable": "Receivable",
+      "payable": "Payable"
+    },
+    "newPayable": "New bill",
+    "newPayableDescription": "Who you owe, how much, and by when. Attach the supplier's document later.",
+    "emptyPayable": "No bills yet. Add one to track what you owe.",
+    "noSupplier": "No supplier",
+    "receivedDocument": "Received document",
+    "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent."
   },
   "collections": {
     "title": "Kolekcje",

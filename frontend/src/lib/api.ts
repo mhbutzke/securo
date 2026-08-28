@@ -20,6 +20,7 @@ import type {
   Payee,
   PayeeSummary,
   Invoice,
+  InvoiceDirection,
   InvoiceDocumentPayload,
   InvoiceFacets,
   InvoiceLineInput,
@@ -1690,6 +1691,12 @@ export default api
 // Invoices — business workspaces only. Every route 404s for a workspace
 // without the module, so these are never called from a personal one.
 export interface InvoiceWritePayload {
+  direction?: InvoiceDirection
+  /** Provenance, for anything that did not originate here: a gateway
+   *  sync, a forwarded email, a photographed supplier invoice. */
+  origin?: 'local' | 'imported'
+  external_source?: string
+  external_id?: string
   payee_id?: string | null
   issue_date?: string
   due_date?: string
@@ -1704,11 +1711,13 @@ export interface InvoiceWritePayload {
 }
 
 export const invoices = {
-  facets: async (year?: number): Promise<InvoiceFacets> => {
-    const { data } = await api.get('/invoices/facets', { params: year ? { year } : undefined })
+  facets: async (year?: number, direction?: InvoiceDirection): Promise<InvoiceFacets> => {
+    const { data } = await api.get('/invoices/facets', {
+      params: { ...(year ? { year } : {}), ...(direction ? { direction } : {}) },
+    })
     return data
   },
-  list: async (params?: { state?: string; year?: number; payee_id?: string; q?: string } | Record<string, unknown>): Promise<Invoice[]> => {
+  list: async (params?: { state?: string; year?: number; direction?: InvoiceDirection; payee_id?: string; q?: string } | Record<string, unknown>): Promise<Invoice[]> => {
     const cleanParams = params && !('queryKey' in params) ? params : undefined
     const { data } = await api.get('/invoices', { params: cleanParams })
     return data
@@ -1717,8 +1726,10 @@ export const invoices = {
     const { data } = await api.get(`/invoices/${id}`)
     return data
   },
-  summary: async (): Promise<InvoiceSummary> => {
-    const { data } = await api.get('/invoices/summary')
+  summary: async (direction?: InvoiceDirection): Promise<InvoiceSummary> => {
+    const { data } = await api.get('/invoices/summary', {
+      params: direction ? { direction } : undefined,
+    })
     return data
   },
   create: async (payload: InvoiceWritePayload): Promise<Invoice> => {

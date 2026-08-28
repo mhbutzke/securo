@@ -146,9 +146,26 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
     totals.push({ label: L.balance, value: money(document.balance), strong: true })
   }
 
+  const received = document.direction === 'payable'
+
   return (
     // The desk: a recessed surface that makes the sheet read as paper.
     <div className="rounded-xl border border-border bg-muted/50 p-3 sm:p-8 overflow-x-auto">
+      {/* A payable was written by the supplier, not by us. Saying so
+          above the sheet keeps the page from reading as a document we
+          issued — the parties are already swapped server-side, but the
+          claim needs words, not just an order. */}
+      {received && (
+        <div
+          className="mx-auto mb-3 max-w-[794px] text-xs text-muted-foreground"
+          data-testid="document-received-note"
+        >
+          <span className="font-medium text-foreground">
+            {t('invoices.receivedDocument')}
+          </span>{' '}
+          {t('invoices.receivedDocumentHint')}
+        </div>
+      )}
       <div
         data-testid="invoice-document"
         className="mx-auto flex flex-col rounded-sm bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_12px_32px_-10px_rgba(0,0,0,0.22)]"

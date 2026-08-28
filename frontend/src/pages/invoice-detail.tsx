@@ -230,7 +230,10 @@ export default function InvoiceDetailPage() {
       </button>
 
       <PageHeader
-        section={invoice.payee?.name ?? t('invoices.noClient')}
+        section={
+          invoice.payee?.name ??
+          t(invoice.direction === 'payable' ? 'invoices.noSupplier' : 'invoices.noClient')
+        }
         title={number ?? t('invoices.draftTitle')}
         action={
           canWrite ? (
@@ -270,6 +273,10 @@ export default function InvoiceDetailPage() {
                     <Download className="h-4 w-4 mr-1.5" />
                     {t('invoices.action.downloadPdf')}
                   </Button>
+                  {/* Sharing is for sending your invoice to your client.
+                      A bill you received belongs to your supplier and has
+                      nobody to be sent to. */}
+                  {invoice.direction === 'receivable' && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -287,6 +294,7 @@ export default function InvoiceDetailPage() {
                       ? t('invoices.action.revokeLink')
                       : t('invoices.action.share')}
                   </Button>
+                  )}
                 </>
               )}
               {/* The rare and irreversible decisions live behind an
@@ -416,7 +424,13 @@ export default function InvoiceDetailPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
               {[
                 { label: t('invoices.column.total'), value: money(invoice.total) },
-                { label: t('invoices.field.paid'), value: money(invoice.amount_paid) },
+                {
+                  label:
+                    invoice.direction === 'payable'
+                      ? t('invoices.field.paidOut')
+                      : t('invoices.field.paid'),
+                  value: money(invoice.amount_paid),
+                },
                 {
                   label: t('invoices.column.balance'),
                   value: money(invoice.balance),

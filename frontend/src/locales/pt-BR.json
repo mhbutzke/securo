@@ -178,7 +178,8 @@
       "total": "Total",
       "balance": "Saldo",
       "state": "Situação",
-      "quantity": "Quantidade"
+      "quantity": "Quantidade",
+      "supplier": "Fornecedor"
     },
     "summary": {
       "outstanding": "A receber",
@@ -188,7 +189,9 @@
       "aging": "Por idade",
       "nothingDue": "Nada a receber.",
       "overdueCount_one": "em {{count}} cobrança",
-      "overdueCount_other": "em {{count}} cobranças"
+      "overdueCount_other": "em {{count}} cobranças",
+      "owed": "A pagar",
+      "paidThisMonth": "Pago no mês"
     },
     "field": {
       "client": "Cliente",
@@ -205,7 +208,9 @@
       "unitPrice": "Valor unitário",
       "taxRate": "Alíquota",
       "lineDescription": "Descrição",
-      "linesOptional": "Opcional. Adicione para transformar isto numa fatura imprimível."
+      "linesOptional": "Opcional. Adicione para transformar isto numa fatura imprimível.",
+      "supplier": "Fornecedor",
+      "paidOut": "Pago"
     },
     "action": {
       "issue": "Emitir",
@@ -266,7 +271,9 @@
       "not_uncollectible": "Só uma cobrança incobrável pode ser reaberta.",
       "amount_not_positive": "O valor deve ser maior que zero.",
       "allocation_not_found": "Vínculo não encontrado.",
-      "draft_not_shareable": "Emita a cobrança antes de compartilhar."
+      "draft_not_shareable": "Emita a cobrança antes de compartilhar.",
+      "external_source_required": "Um documento importado precisa dizer de onde veio.",
+      "payable_not_shareable": "Uma conta a pagar não pode ser compartilhada."
     },
     "comingNext": "Cobre seus clientes e acompanhe o que já foi pago e o que continua em aberto. É a próxima coisa sendo construída.",
     "document": {
@@ -311,7 +318,17 @@
     },
     "editDraft": "Editar rascunho",
     "updated": "Cobrança atualizada",
-    "editDraftDescription": "Só rascunhos mudam. Depois de emitida, cancele e emita outra."
+    "editDraftDescription": "Só rascunhos mudam. Depois de emitida, cancele e emita outra.",
+    "direction": {
+      "receivable": "A receber",
+      "payable": "A pagar"
+    },
+    "newPayable": "Nova conta a pagar",
+    "newPayableDescription": "Para quem você deve, quanto e até quando. O documento do fornecedor entra depois.",
+    "emptyPayable": "Nenhuma conta a pagar ainda. Adicione uma para acompanhar o que você deve.",
+    "noSupplier": "Sem fornecedor",
+    "receivedDocument": "Documento recebido",
+    "receivedDocumentHint": "Emitido pelo seu fornecedor. Exibido como registrado, não como algo que você enviou."
   },
   "collections": {
     "title": "Coleções",

@@ -1082,6 +1082,8 @@ export interface Invoice {
   document_type: string
   direction: InvoiceDirection
   origin: string
+  external_source: string | null
+  external_id: string | null
   number: number | null
   series: string | null
   status: InvoiceStatus
@@ -1216,6 +1218,9 @@ export interface InvoiceDocumentPayload {
   notes: string | null
   footer_note: string | null
   custom_fields: { label: string; value: string }[]
+  /** On a payable the parties are already swapped server-side; this is
+   *  carried so the page can say "received" instead of "issued". */
+  direction: InvoiceDirection
   /** False when the invoice is only tracking money — the common case
    *  where the fiscal document was issued somewhere else entirely. */
   has_line_items: boolean

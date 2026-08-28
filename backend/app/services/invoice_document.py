@@ -248,6 +248,12 @@ class InvoiceDocument:
     #: document at all. An amount with no lines is a perfectly good
     #: receivable and a poor-looking fatura, so the UI asks first.
     has_line_items: bool
+    #: Which side of the ledger. On a payable the parties are already
+    #: swapped below, so a renderer never has to know — but it is carried
+    #: so a screen can say "received" instead of "issued", which is the
+    #: difference between showing a document and claiming to have written
+    #: one.
+    direction: str = "receivable"
 
 
 def _label_map(
@@ -335,7 +341,7 @@ async def build_document(
     )
     issuer_tax_ids = [_format_tax_id(row.kind, row.value) for row in tax_rows.scalars().all()]
 
-    issuer = DocumentParty(
+    workspace_party = DocumentParty(
         name=issued_or_live("display_name", settings.issuer_display_name) or workspace.name,
         legal_name=issued_or_live("legal_name", workspace.legal_name),
         address=issued_or_live("address", workspace.address),
@@ -343,7 +349,7 @@ async def build_document(
     )
 
     payee = invoice.payee
-    client = DocumentParty(
+    counterparty = DocumentParty(
         name=snap_client.get("name") if snapshot else (payee.name if payee else None),
         address=snap_client.get("address") if snapshot else (payee.address if payee else None),
         email=snap_client.get("email") if snapshot else (payee.email if payee else None),
@@ -355,6 +361,15 @@ async def build_document(
         if snapshot
         else [_format_tax_id(t.kind, t.value) for t in (payee.tax_ids if payee else [])],
     )
+
+    # On a payable the supplier wrote the document and we received it, so
+    # the blocks swap. Doing it once here rather than in each renderer is
+    # what keeps the PDF and the screen from disagreeing about who is who
+    # — and stops the product printing a supplier's bill under our own
+    # name, which is the wrong claim to make on paper.
+    payable = invoice.direction == "payable"
+    issuer = counterparty if payable else workspace_party
+    client = workspace_party if payable else counterparty
 
     template = snapshot.get("template") if snapshot else settings.template
 
@@ -402,6 +417,7 @@ async def build_document(
         footer_note=issued_or_live("footer_note", settings.footer_note),
         custom_fields=_custom_field_pairs(template, invoice.custom_fields),
         has_line_items=bool(invoice.lines),
+        direction=invoice.direction,
     )
 
 
@@ -455,4 +471,5 @@ def document_payload(document: InvoiceDocument) -> dict[str, Any]:
         "footer_note": document.footer_note,
         "custom_fields": [{"label": k, "value": v} for k, v in document.custom_fields],
         "has_line_items": document.has_line_items,
+        "direction": document.direction,
     }

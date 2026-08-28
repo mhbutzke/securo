@@ -273,6 +273,30 @@ def _base_query(direction: str = DEFAULT_DIRECTION) -> Select:
     )
 
 
+async def find_by_external_id(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    external_source: Optional[str],
+    external_id: Optional[str],
+) -> Optional[Invoice]:
+    """The row that already holds this external document, if any.
+
+    The lookup an importer does before writing, and the one the duplicate
+    handler does after the database refuses. Both sides need it, which is
+    why it is not buried in either.
+    """
+    if not external_source or not external_id:
+        return None
+    result = await session.execute(
+        select(Invoice).where(
+            Invoice.workspace_id == workspace_id,
+            Invoice.external_source == external_source,
+            Invoice.external_id == external_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_invoice(
     session: AsyncSession, invoice_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[Invoice]:
@@ -546,6 +570,17 @@ async def create_invoice(
             "lines_required", "This workspace requires invoices to carry line items"
         )
 
+    # Provenance is declared, never inferred: a row that says `imported`
+    # has to say what it was imported from, or the pair that makes a
+    # re-sync converge on one row is missing and the second sync creates
+    # a duplicate instead of updating.
+    origin = data.get("origin") or "local"
+    if origin == "imported" and not data.get("external_source"):
+        raise InvoiceError(
+            "external_source_required",
+            "An imported document must say where it came from",
+        )
+
     issue_date = data.get("issue_date") or datetime.now(timezone.utc).date()
     due_date = data.get("due_date")
     if due_date is None:
@@ -568,13 +603,33 @@ async def create_invoice(
         tax_total=data.get("tax_total") or ZERO,
         total=data.get("total") or ZERO,
         direction=data.get("direction") or DEFAULT_DIRECTION,
+        origin=origin,
+        external_source=data.get("external_source"),
+        external_id=data.get("external_id"),
         notes=data.get("notes"),
         internal_notes=data.get("internal_notes"),
         custom_fields=data.get("custom_fields"),
         status="draft",
     )
     session.add(invoice)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # The unique (workspace, source, external id) is what makes a
+        # re-sync converge on one row instead of duplicating. Answer with
+        # the row that already holds this document so a caller can update
+        # it rather than guess, and so a retried import is a no-op rather
+        # than a crash.
+        await session.rollback()
+        existing = await find_by_external_id(
+            session, workspace_id, data.get("external_source"), data.get("external_id")
+        )
+        where = f" as {existing.number}" if existing and existing.number else ""
+        raise InvoiceError(
+            "already_imported",
+            f"This document is already here{where}",
+            status_code=409,
+        ) from None
 
     for position, line in enumerate(lines_data):
         session.add(_build_line(invoice, line, position))
@@ -887,6 +942,13 @@ async def create_share_token(session: AsyncSession, invoice: Invoice) -> str:
     """
     if invoice.status == "draft":
         raise InvoiceError("draft_not_shareable", "Issue the invoice before sharing it")
+    # A payable is the supplier's document, not ours. There is nobody to
+    # send it to, and publishing someone else's invoice on a public link
+    # is a leak with no upside.
+    if invoice.direction != DEFAULT_DIRECTION:
+        raise InvoiceError(
+            "payable_not_shareable", "A bill you received cannot be shared"
+        )
     token = invoice.share_token
     if not token:
         # Bound to a local so the return type is a `str`, not the

@@ -70,8 +70,21 @@ class InvoiceAllocationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+#: Where a document came from. `local` is one someone typed here;
+#: `imported` is one that arrived from somewhere else and was
+#: reconstructed — a gateway sync, a forwarded email, a photographed
+#: supplier invoice. The *source* goes in `external_source`.
+InvoiceOrigin = Literal["local", "imported"]
+
+
 class InvoiceCreate(BaseModel):
     direction: Optional[InvoiceDirection] = None
+    #: Provenance. Every future intake — gateway sync, email, upload,
+    #: OCR — writes through these three fields, which is why they are
+    #: accepted here before any of those intakes exist.
+    origin: Optional[InvoiceOrigin] = None
+    external_source: Optional[str] = Field(default=None, max_length=50)
+    external_id: Optional[str] = Field(default=None, max_length=255)
     payee_id: Optional[uuid.UUID] = None
     issue_date: Optional[_Date] = None
     # Optional: falls back to the workspace's default payment terms, so
@@ -119,6 +132,8 @@ class InvoiceRead(BaseModel):
     document_type: str
     direction: InvoiceDirection
     origin: str
+    external_source: Optional[str] = None
+    external_id: Optional[str] = None
     number: Optional[int]
     series: Optional[str]
     status: InvoiceStatus

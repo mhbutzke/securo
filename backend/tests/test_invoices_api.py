@@ -1008,3 +1008,103 @@ async def test_fetching_one_by_id_is_not_narrowed_by_side(client: AsyncClient, b
 async def test_an_unknown_side_is_refused(client: AsyncClient, biz_headers):
     resp = await client.get("/api/invoices?direction=sideways", headers=biz_headers)
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# What a payable is, and what it is not
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_payable_document_names_the_supplier_as_the_issuer(
+    client: AsyncClient, biz_headers, client_payee
+):
+    """We did not write this document; the supplier did. Rendering it
+    under our own name would be the wrong claim to make on paper."""
+    bill = await _create(client, biz_headers, direction="payable",
+                         payee_id=str(client_payee.id))
+    doc = (
+        await client.get(f"/api/invoices/{bill['id']}/document", headers=biz_headers)
+    ).json()
+    assert doc["issuer"]["name"] == "Cliente Alpha"
+    assert doc["client"]["name"] != "Cliente Alpha"
+    assert doc["direction"] == "payable"
+
+
+@pytest.mark.asyncio
+async def test_a_receivable_document_still_names_us_as_the_issuer(
+    client: AsyncClient, biz_headers, client_payee
+):
+    invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+    doc = (
+        await client.get(f"/api/invoices/{invoice['id']}/document", headers=biz_headers)
+    ).json()
+    assert doc["client"]["name"] == "Cliente Alpha"
+    assert doc["issuer"]["name"] != "Cliente Alpha"
+
+
+@pytest.mark.asyncio
+async def test_a_payable_cannot_be_shared(client: AsyncClient, biz_headers):
+    """Sharing sends your invoice to your client. A bill you received
+    belongs to your supplier and has nobody to be sent to — publishing it
+    is a leak with no upside."""
+    bill = await _create(client, biz_headers, direction="payable")
+    resp = await client.post(f"/api/invoices/{bill['id']}/share", headers=biz_headers)
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "payable_not_shareable"
+
+
+# ---------------------------------------------------------------------------
+# Provenance — the seam every future intake writes through
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_an_imported_document_keeps_where_it_came_from(
+    client: AsyncClient, biz_headers
+):
+    """Email, a photographed bill, a gateway sync: each arrives through
+    these three fields, which is why they are accepted before any of
+    those intakes exist."""
+    bill = await _create(
+        client, biz_headers, direction="payable", origin="imported",
+        external_source="email", external_id="msg-42",
+    )
+    assert bill["origin"] == "imported"
+    assert bill["external_source"] == "email"
+    assert bill["external_id"] == "msg-42"
+
+
+@pytest.mark.asyncio
+async def test_an_import_must_say_where_it_came_from(client: AsyncClient, biz_headers):
+    """Without the source there is no pair to converge on, so a re-sync
+    creates a second row instead of updating the first."""
+    resp = await client.post(
+        "/api/invoices",
+        headers=biz_headers,
+        json={"total": "10.00", "origin": "imported"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "external_source_required"
+
+
+@pytest.mark.asyncio
+async def test_the_same_external_document_never_lands_twice(
+    client: AsyncClient, biz_headers
+):
+    await _create(client, biz_headers, direction="payable", origin="imported",
+                  external_source="email", external_id="msg-42")
+    second = await client.post(
+        "/api/invoices",
+        headers=biz_headers,
+        json={"total": "10.00", "direction": "payable", "origin": "imported",
+              "external_source": "email", "external_id": "msg-42"},
+    )
+    # The unique pair is what makes a re-sync converge rather than
+    # duplicate, and the answer names the row that already holds the
+    # document so a retried import can update it instead of guessing.
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "already_imported"
+
+
+@pytest.mark.asyncio
+async def test_a_locally_created_document_says_so(client: AsyncClient, biz_headers):
+    invoice = await _create(client, biz_headers)
+    assert invoice["origin"] == "local"
+    assert invoice["external_source"] is None

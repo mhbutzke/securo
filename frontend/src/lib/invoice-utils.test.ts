@@ -23,6 +23,8 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     document_type: 'invoice',
     direction: 'receivable',
     origin: 'local',
+    external_source: null,
+    external_id: null,
     number: 7,
     series: null,
     status: 'open',
