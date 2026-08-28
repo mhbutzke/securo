@@ -1,7 +1,7 @@
 """the invoicing ledger: invoices, lines, allocations and settings
 
-Revision ID: 076
-Revises: 075
+Revision ID: 077
+Revises: 076
 Create Date: 2026-08-26
 
 Four new tables, no change to any existing one. That is deliberate and
@@ -27,10 +27,11 @@ that fills any of it comes from the jurisdiction packs, never from DDL.
 Downgrade drops all four tables. Safe by construction: nothing outside
 them references them.
 
-Numbering note: this chains off `075`, the head on `main` today. PR #708
-(payee identity) also claims `076` and `077`. Whichever lands second
-renumbers — for this file that is two lines and a rename, because
-nothing references the revision id but the chain itself.
+Numbering note: renumbered once already. This chains off `076`
+(`payee_workspace_uniqueness`), which landed on `main` while this branch
+was open. Any migration that lands before this one merges will need the
+same two-line change plus a rename — nothing references the revision id
+but the chain itself, which is why the CI check for it exists.
 """
 from typing import Sequence, Union
 
@@ -38,8 +39,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "076"
-down_revision: Union[str, None] = "075"
+revision: str = "077"
+down_revision: Union[str, None] = "076"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
