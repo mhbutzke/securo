@@ -43,6 +43,7 @@ export function InvoiceDocumentBrowser({
   origin,
   canWrite,
   ourPageLabel,
+  ourPageDate,
   ourPage,
   onChanged,
 }: {
@@ -51,6 +52,10 @@ export function InvoiceDocumentBrowser({
   canWrite: boolean
   /** The number the generated page carries, when it has one. */
   ourPageLabel?: string | null
+  /** When the page came into being — the moment the invoice was issued,
+   *  which is also the date printed on it. The other entries say when
+   *  they arrived; this one says when it was made. */
+  ourPageDate?: string | null
   /** The rendered invoice. Passed in so this component never learns how a
    *  document is drawn — only that one exists. */
   ourPage: React.ReactNode | null
@@ -121,16 +126,20 @@ export function InvoiceDocumentBrowser({
     },
   })
 
-  const showDate = (value: string) =>
-    new Date(`${value}T00:00:00`).toLocaleDateString(dateLocale)
-  /** When the file reached us, which is rarely the date on the document
-   *  itself — an integration can deliver a nota fiscal weeks late. */
-  const showDateTime = (value: string) =>
-    new Date(value).toLocaleDateString(dateLocale, {
+  const longDate = (value: Date) =>
+    value.toLocaleDateString(dateLocale, {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     })
+  /** When the file reached us, which is rarely the date on the document
+   *  itself — an integration can deliver a fiscal document weeks late.
+   *  A full timestamp, so it is read in the reader's own zone. */
+  const showArrival = (value: string) => longDate(new Date(value))
+  /** A date with no time. Parsed at local midnight rather than handed to
+   *  `new Date`, which reads a bare `2026-08-28` as UTC and lands on the
+   *  27th for anybody west of Greenwich. */
+  const showPlainDate = (value: string) => longDate(new Date(`${value}T00:00:00`))
 
   const activeAttachment =
     active && active !== OUR_PAGE ? attachments.find((a) => a.id === active) : undefined
@@ -198,7 +207,9 @@ export function InvoiceDocumentBrowser({
                   onSelect={() => setSelected(OUR_PAGE)}
                   icon={<FileText className="h-4 w-4" />}
                   title={ourPageLabel || t('invoices.documents.ourPage')}
-                  subtitle={t('invoices.documents.rendered')}
+                  subtitle={t('invoices.documents.rendered', {
+                    date: ourPageDate ? showPlainDate(ourPageDate) : '',
+                  })}
                   isPrimary={!anyPrimary}
                 />
               </li>
@@ -220,14 +231,14 @@ export function InvoiceDocumentBrowser({
                   subtitle={[
                     t(`invoices.documents.kind.${attachment.kind}`),
                     formatFileSize(attachment.size),
-                    attachment.issued_at ? showDate(attachment.issued_at) : null,
+                    attachment.issued_at ? showPlainDate(attachment.issued_at) : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
                   reference={attachment.document_number}
                   provenance={(() => {
                     const from = documentProvenance(attachment.source)
-                    const arrived = showDateTime(attachment.created_at)
+                    const arrived = showArrival(attachment.created_at)
                     return from.kind === 'system'
                       ? t('invoices.documents.fromSystem', { source: from.name, date: arrived })
                       : t('invoices.documents.fromUpload', { date: arrived })

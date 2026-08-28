@@ -352,7 +352,7 @@
       "notOurs": "Dokument został wystawiony gdzie indziej",
       "notOursHint": "Dołącz otrzymany plik, a zostanie pokazany tutaj dokładnie w takiej postaci, w jakiej dotarł.",
       "ourPage": "Faktura",
-      "rendered": "Wygenerowana strona",
+      "rendered": "Wygenerowana przez Securo · {{date}}",
       "kindLabel": "Typ dokumentu",
       "fromSystem": "Z {{source}} · {{date}}",
       "fromUpload": "Przesłano · {{date}}"

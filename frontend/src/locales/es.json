@@ -352,7 +352,7 @@
       "notOurs": "El documento se emitió en otro lugar",
       "notOursHint": "Adjunta el archivo que recibiste y se mostrará aquí, tal como llegó.",
       "ourPage": "Factura",
-      "rendered": "Página generada",
+      "rendered": "Generada por Securo · {{date}}",
       "kindLabel": "Tipo de documento",
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Subido · {{date}}"

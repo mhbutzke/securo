@@ -442,6 +442,7 @@ export default function InvoiceDetailPage() {
               origin={invoice.origin}
               canWrite={canWrite}
               ourPageLabel={number}
+              ourPageDate={invoice.issue_date}
               ourPage={<InvoiceDocumentView document={documentPayload} />}
               onChanged={refresh}
             />

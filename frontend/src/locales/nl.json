@@ -352,7 +352,7 @@
       "notOurs": "Het document is elders uitgegeven",
       "notOursHint": "Voeg het ontvangen bestand toe, dan wordt het hier getoond zoals het binnenkwam.",
       "ourPage": "Factuur",
-      "rendered": "Gegenereerde pagina",
+      "rendered": "Gegenereerd door Securo · {{date}}",
       "kindLabel": "Documenttype",
       "fromSystem": "Van {{source}} · {{date}}",
       "fromUpload": "Geüpload · {{date}}"
