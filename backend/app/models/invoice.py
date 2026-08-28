@@ -144,11 +144,17 @@ class Invoice(Base):
             "direction IN ('receivable', 'payable')", name="ck_invoices_direction"
         ),
         CheckConstraint("origin IN ('local', 'imported')", name="ck_invoices_origin"),
-        # A draft has no number; anything past draft has one. Written as a
-        # constraint because the alternative is trusting every future code
-        # path to remember.
+        # A draft has no number, and anything we issued has one. Written as
+        # a constraint because the alternative is trusting every future
+        # code path to remember.
+        #
+        # Imported rows are outside it: their identity came with them, and
+        # a source that numbers nothing leaves the column null rather than
+        # borrowing from our sequence.
         CheckConstraint(
-            "(status = 'draft' AND number IS NULL) OR (status <> 'draft' AND number IS NOT NULL)",
+            "(status = 'draft' AND number IS NULL)"
+            " OR (status <> 'draft' AND origin = 'local' AND number IS NOT NULL)"
+            " OR origin = 'imported'",
             name="ck_invoices_number_matches_status",
         ),
         CheckConstraint("total >= 0", name="ck_invoices_total_non_negative"),

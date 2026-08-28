@@ -85,6 +85,11 @@ class InvoiceCreate(BaseModel):
     origin: Optional[InvoiceOrigin] = None
     external_source: Optional[str] = Field(default=None, max_length=50)
     external_id: Optional[str] = Field(default=None, max_length=255)
+    #: The number the source gave it. Only meaningful on an import: a
+    #: document written here is numbered from this workspace's own
+    #: sequence and never from a request body.
+    number: Optional[int] = Field(default=None, ge=0)
+    series: Optional[str] = Field(default=None, max_length=20)
     payee_id: Optional[uuid.UUID] = None
     issue_date: Optional[_Date] = None
     # Optional: falls back to the workspace's default payment terms, so

@@ -1108,3 +1108,81 @@ async def test_a_locally_created_document_says_so(client: AsyncClient, biz_heade
     invoice = await _create(client, biz_headers)
     assert invoice["origin"] == "local"
     assert invoice["external_source"] is None
+
+
+# ---------------------------------------------------------------------------
+# Provenance decides numbering and the snapshot, not direction
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_an_import_never_takes_a_number_from_our_sequence(
+    client: AsyncClient, biz_headers
+):
+    """The defect this exists for: a receivable imported as FAT-9931 came
+    back numbered 4. That burns a number from a sequence meant to be
+    gapless and renames a document its recipient already holds."""
+    ours = await _create(client, biz_headers, total="100.00")
+    assert ours["number"] == 1
+
+    imported = await _create(
+        client, biz_headers, total="1500.00", origin="imported",
+        external_source="erp", external_id="FAT-9931", number=9931,
+    )
+    assert imported["number"] == 9931
+
+    # Our sequence did not move: the next document we write is 2.
+    nxt = await _create(client, biz_headers, total="200.00")
+    assert nxt["number"] == 2
+
+
+@pytest.mark.asyncio
+async def test_an_import_with_no_number_stays_unnumbered(
+    client: AsyncClient, biz_headers
+):
+    """A source that numbers nothing leaves the column null rather than
+    borrowing from ours."""
+    imported = await _create(
+        client, biz_headers, total="500.00", origin="imported",
+        external_source="erp", external_id="no-number",
+    )
+    assert imported["number"] is None
+    # And it is open, not draft: somebody issued it elsewhere, and a
+    # draft state would claim we are still writing it.
+    assert imported["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_an_import_does_not_get_our_snapshot(client: AsyncClient, biz_headers):
+    """Freezing our issuer identity at the moment we recorded someone
+    else's document is a stamp with no meaning."""
+    await client.patch(
+        "/api/invoices/settings",
+        headers=biz_headers,
+        json={"issuer_display_name": "Alpha ME", "logo_url": "https://example.com/l.png"},
+    )
+    imported = await _create(
+        client, biz_headers, total="500.00", origin="imported",
+        external_source="erp", external_id="abc",
+    )
+    assert imported["snapshot"] is None
+
+    # A document we wrote still gets one.
+    ours = await _create(client, biz_headers, total="100.00")
+    assert ours["snapshot"]["issuer"]["display_name"] == "Alpha ME"
+
+
+@pytest.mark.asyncio
+async def test_the_rule_is_provenance_not_direction(client: AsyncClient, biz_headers):
+    """An imported receivable is as much someone else's document as an
+    imported payable. Direction has nothing to do with it."""
+    for direction in ("receivable", "payable"):
+        imported = await _create(
+            client, biz_headers, total="120.00", direction=direction,
+            origin="imported", external_source="erp", external_id=f"x-{direction}",
+        )
+        assert imported["snapshot"] is None, direction
+        assert imported["number"] is None, direction
+
+    for direction in ("receivable", "payable"):
+        ours = await _create(client, biz_headers, total="120.00", direction=direction)
+        assert ours["snapshot"] is not None, direction
+        assert ours["number"] is not None, direction

@@ -640,12 +640,18 @@ async def create_invoice(
     # `open` on creation is the tracking preset's whole point: the money
     # is already owed, and making the user press "issue" on a note to
     # self is ceremony.
-    if settings.initial_state == "open":
+    # An imported document is already open by definition: somebody issued
+    # it elsewhere, and a draft state would claim we are still writing it.
+    if settings.initial_state == "open" or invoice.origin == "imported":
         if (invoice.total or ZERO) <= ZERO:
             raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
         locked = await _settings_for_update(session, workspace_id)
         workspace = await session.get(Workspace, workspace_id)
         _issue(invoice, locked, workspace)
+        # The number the source gave it, when it gave one. Never ours.
+        if invoice.origin == "imported":
+            invoice.number = data.get("number")
+            invoice.series = data.get("series")
 
     await session.flush()
     return invoice
@@ -747,19 +753,33 @@ def _build_snapshot(
 def _issue(
     invoice: Invoice, settings: InvoiceSettings, workspace: Optional[Workspace] = None
 ) -> None:
-    """Assign the next number and open the invoice.
+    """Open the invoice, numbering and freezing it only if it is ours.
 
-    The counter only ever moves forward. A voided invoice keeps the
-    number it consumed: reusing it would put two different documents
-    under one identifier, which every jurisdiction that regulates
-    numbering forbids, and which no jurisdiction that doesn't would
-    thank us for.
+    **Numbering.** Our counter only ever moves forward, and a voided
+    invoice keeps the number it consumed: reusing one would put two
+    documents under a single identifier, which every jurisdiction that
+    regulates numbering forbids and no other would thank us for.
+
+    An **imported** document is exempt from all of that. It already has
+    an identity — the source called it something — so taking a number
+    from our sequence would burn one that is supposed to be gapless and
+    rename a document its recipient already holds under another name. It
+    keeps whatever number came with it, or none.
+
+    **Snapshot.** Freezing our issuer identity is a record of what *we*
+    put on a document at the moment we issued it. On an imported row
+    somebody else issued it and we are keeping a record, so the same
+    freeze would stamp our details onto a page we did not write and give
+    it a date that means nothing. The attached file is that document; the
+    snapshot is for ours.
     """
-    invoice.number = settings.next_number
-    invoice.series = settings.series
-    settings.next_number += 1
+    local = invoice.origin == "local"
+    if local:
+        invoice.number = settings.next_number
+        invoice.series = settings.series
+        settings.next_number += 1
+        invoice.snapshot = _build_snapshot(invoice, settings, workspace)
     invoice.status = "open"
-    invoice.snapshot = _build_snapshot(invoice, settings, workspace)
 
 
 async def issue_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:

@@ -101,11 +101,15 @@ def upgrade() -> None:
             "direction IN ('receivable', 'payable')", name="ck_invoices_direction"
         ),
         sa.CheckConstraint("origin IN ('local', 'imported')", name="ck_invoices_origin"),
-        # A draft has no number; anything past draft has one. In the
+        # A draft has no number, and anything we issued has one. In the
         # database because the alternative is trusting every future code
-        # path to remember.
+        # path to remember. Imported rows are outside it: their identity
+        # came with them, and a source that numbers nothing leaves the
+        # column null rather than borrowing from our sequence.
         sa.CheckConstraint(
-            "(status = 'draft' AND number IS NULL) OR (status <> 'draft' AND number IS NOT NULL)",
+            "(status = 'draft' AND number IS NULL)"
+            " OR (status <> 'draft' AND origin = 'local' AND number IS NOT NULL)"
+            " OR origin = 'imported'",
             name="ck_invoices_number_matches_status",
         ),
         sa.CheckConstraint("total >= 0", name="ck_invoices_total_non_negative"),
