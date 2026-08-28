@@ -354,7 +354,9 @@
         "contract": "Contract",
         "other": "Other"
       },
-      "actions": "Actions"
+      "actions": "Actions",
+      "notOurs": "The document was issued elsewhere",
+      "notOursHint": "Attach the file you received and it will be shown here, exactly as it arrived."
     }
   },
   "collections": {

@@ -354,7 +354,9 @@
         "receipt": "Potwierdzenie",
         "contract": "Umowa",
         "other": "Inne"
-      }
+      },
+      "notOurs": "Dokument został wystawiony gdzie indziej",
+      "notOursHint": "Dołącz otrzymany plik, a zostanie pokazany tutaj dokładnie w takiej postaci, w jakiej dotarł."
     }
   },
   "collections": {

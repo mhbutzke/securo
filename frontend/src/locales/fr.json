@@ -354,7 +354,9 @@
         "receipt": "Reçu",
         "contract": "Contrat",
         "other": "Autre"
-      }
+      },
+      "notOurs": "Le document a été émis ailleurs",
+      "notOursHint": "Joignez le fichier que vous avez reçu et il s'affichera ici, tel qu'il est arrivé."
     }
   },
   "collections": {

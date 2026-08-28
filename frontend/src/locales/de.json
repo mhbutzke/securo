@@ -354,7 +354,9 @@
         "receipt": "Beleg",
         "contract": "Vertrag",
         "other": "Sonstiges"
-      }
+      },
+      "notOurs": "Das Dokument wurde anderswo ausgestellt",
+      "notOursHint": "Hängen Sie die erhaltene Datei an, dann wird sie hier genau so angezeigt, wie sie eingegangen ist."
     }
   },
   "collections": {

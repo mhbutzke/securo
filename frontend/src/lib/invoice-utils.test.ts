@@ -6,9 +6,12 @@ import {
   customFieldDefs,
   daysUntilDue,
   displayNumber,
+  documentSource,
+  formatFileSize,
   invoiceErrorKey,
   isOutstanding,
   linesTotal,
+  previewKind,
   resolveTemplate,
 } from './invoice-utils'
 import type { Invoice, InvoiceState } from '@/types'
@@ -278,5 +281,56 @@ describe('invoiceErrorKey', () => {
     expect(invoiceErrorKey(new Error('network'))).toBeNull()
     expect(invoiceErrorKey({ response: { data: { detail: 'plain string' } } })).toBeNull()
     expect(invoiceErrorKey(undefined)).toBeNull()
+  })
+})
+
+
+describe('formatFileSize', () => {
+  it('counts bytes below a kilobyte', () => {
+    expect(formatFileSize(0)).toBe('0 B')
+    expect(formatFileSize(976)).toBe('976 B')
+  })
+
+  it('rounds to whole kilobytes, then to a tenth of a megabyte', () => {
+    expect(formatFileSize(2048)).toBe('2 KB')
+    expect(formatFileSize(1024 * 1024 * 3.25)).toBe('3.3 MB')
+  })
+
+  it('does not print nonsense for a size that never arrived', () => {
+    expect(formatFileSize(Number.NaN)).toBe('0 B')
+    expect(formatFileSize(-1)).toBe('0 B')
+  })
+})
+
+describe('previewKind', () => {
+  it('renders a PDF and an image in place', () => {
+    expect(previewKind('application/pdf')).toBe('pdf')
+    expect(previewKind('image/png')).toBe('image')
+    expect(previewKind('IMAGE/JPEG')).toBe('image')
+  })
+
+  it('offers no preview for a format the browser cannot draw', () => {
+    // An empty frame is worse than a button that opens the file.
+    expect(previewKind('application/xml')).toBe('none')
+    expect(previewKind(null)).toBe('none')
+    expect(previewKind(undefined)).toBe('none')
+  })
+})
+
+describe('documentSource', () => {
+  it('shows the filed file whenever there is one', () => {
+    expect(documentSource('imported', { id: 'a' })).toBe('filed')
+    expect(documentSource('local', { id: 'a' })).toBe('filed')
+  })
+
+  it('renders our own page only for a document we wrote', () => {
+    expect(documentSource('local', null)).toBe('rendered')
+  })
+
+  it('draws nothing for an import with nothing filed', () => {
+    // The case the aggregator exists for: a blank sheet in our layout,
+    // standing in for a document a supplier issued, is an invention.
+    expect(documentSource('imported', null)).toBe('missing')
+    expect(documentSource('imported', undefined)).toBe('missing')
   })
 })

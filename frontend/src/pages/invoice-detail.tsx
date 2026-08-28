@@ -42,7 +42,11 @@ import {
   StateBadge,
 } from '@/components/invoice-ui'
 import { InvoiceDocumentView } from '@/components/invoice-document'
-import { InvoiceDocuments, InvoiceSourceDocument } from '@/components/invoice-documents'
+import {
+  InvoiceDocuments,
+  InvoiceSourceDocument,
+  MissingSourceDocument,
+} from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import type { Invoice, InvoiceLineInput } from '@/types'
 import { cn } from '@/lib/utils'
@@ -103,6 +107,17 @@ export default function InvoiceDetailPage() {
   })
   // Only when the tab is open: it resolves the snapshot and builds the
   // whole page server-side, and the ledger view has no use for any of it.
+  // Fetched here rather than only inside the Documents section: the
+  // header has to know whether a real document exists before it offers
+  // to download one. Same query key as the section, so this is one
+  // request shared through the cache, not two.
+  const { data: attachments = [] } = useQuery({
+    queryKey: ['invoice-attachments', id],
+    queryFn: () => invoicesApi.attachments.list(id!),
+    enabled: Boolean(id),
+  })
+  const hasFiledDocument = attachments.some((a) => a.is_primary)
+
   const { data: documentPayload } = useQuery({
     queryKey: ['invoice-document', id],
     queryFn: () => invoicesApi.document(id),
@@ -264,16 +279,23 @@ export default function InvoiceDetailPage() {
               )}
               {invoice.status !== 'draft' && (
                 <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => downloadMutation.mutate()}
-                    disabled={downloadMutation.isPending}
-                    data-testid="invoice-download-pdf"
-                  >
-                    <Download className="h-4 w-4 mr-1.5" />
-                    {t('invoices.action.downloadPdf')}
-                  </Button>
+                  {/* Downloading an imported invoice with nothing filed
+                      would hand over a page we drew for a document
+                      somebody else issued — the same invention the
+                      Document tab refuses to make. Nothing to download
+                      until the real file arrives. */}
+                  {(invoice.origin !== 'imported' || hasFiledDocument) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadMutation.mutate()}
+                      disabled={downloadMutation.isPending}
+                      data-testid="invoice-download-pdf"
+                    >
+                      <Download className="h-4 w-4 mr-1.5" />
+                      {t('invoices.action.downloadPdf')}
+                    </Button>
+                  )}
                   {/* Sharing is for sending your invoice to your client.
                       A bill you received belongs to your supplier and has
                       nobody to be sent to. */}
@@ -422,6 +444,10 @@ export default function InvoiceDetailPage() {
                 invoiceId={invoice.id}
                 file={documentPayload.source_file}
               />
+            ) : invoice.origin === 'imported' ? (
+              // Somebody else issued this one and we have not been given
+              // the page. Rendering ours would invent it.
+              <MissingSourceDocument />
             ) : (
               <InvoiceDocumentView document={documentPayload} />
             )

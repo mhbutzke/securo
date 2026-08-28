@@ -354,7 +354,9 @@
         "receipt": "Betaalbewijs",
         "contract": "Contract",
         "other": "Overig"
-      }
+      },
+      "notOurs": "Het document is elders uitgegeven",
+      "notOursHint": "Voeg het ontvangen bestand toe, dan wordt het hier getoond zoals het binnenkwam."
     }
   },
   "collections": {

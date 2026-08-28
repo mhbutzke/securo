@@ -261,3 +261,24 @@ async def test_a_download_returns_the_bytes_that_were_stored(
         f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
     )
     assert resp.content == payload
+
+
+@pytest.mark.asyncio
+async def test_an_import_with_nothing_filed_has_no_pdf_to_give(
+    client: AsyncClient, biz_headers
+):
+    """Refused at the API too, not only hidden in the UI: a rule enforced
+    in a button is one the next caller does not know about."""
+    invoice = await make_invoice(
+        client, biz_headers, direction="payable", origin="imported",
+        external_source="email", external_id="none-filed",
+    )
+    resp = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "no_document_filed"
+
+    # Once the real file is filed, it is served.
+    await upload(client, biz_headers, invoice["id"], filename="recebida.pdf", kind="bill")
+    resp = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert resp.status_code == 200
+    assert "recebida.pdf" in resp.headers["content-disposition"]

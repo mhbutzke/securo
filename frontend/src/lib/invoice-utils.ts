@@ -154,3 +154,40 @@ export function allocationOrigin(method: string): {
   const automatic = method !== MANUAL_METHOD
   return { automatic, strategyId: automatic ? method : null }
 }
+
+
+/** A file size as a person reads it. Bytes below a kilobyte, then whole
+ *  kilobytes, then one decimal of a megabyte — the precision stops where
+ *  it stops being information. */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B'
+  if (bytes < 1024) return `${Math.round(bytes)} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** How a filed document can be shown in the page.
+ *
+ *  `pdf` and `image` render in place; everything else has to be opened,
+ *  because guessing at a preview for a format the browser cannot draw
+ *  produces an empty frame rather than an answer. */
+export function previewKind(contentType: string | null | undefined): 'pdf' | 'image' | 'none' {
+  const type = (contentType ?? '').toLowerCase()
+  if (type === 'application/pdf') return 'pdf'
+  if (type.startsWith('image/')) return 'image'
+  return 'none'
+}
+
+/** Whether the Document tab has a real page to show.
+ *
+ *  Three outcomes, and the middle one is the point: an imported invoice
+ *  with nothing filed must show neither a file (there is none) nor our
+ *  own render (we did not write it, and drawing one invents a document
+ *  somebody else issued). */
+export function documentSource(
+  origin: string,
+  sourceFile: unknown | null | undefined,
+): 'filed' | 'missing' | 'rendered' {
+  if (sourceFile) return 'filed'
+  return origin === 'imported' ? 'missing' : 'rendered'
+}

@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { invoices as invoicesApi } from '@/lib/api'
+import { formatFileSize, previewKind } from '@/lib/invoice-utils'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import type { InvoiceAttachment, InvoiceAttachmentKind } from '@/types'
 
@@ -27,12 +28,6 @@ import type { InvoiceAttachment, InvoiceAttachmentKind } from '@/types'
  */
 
 const KINDS: InvoiceAttachmentKind[] = ['bill', 'fiscal', 'receipt', 'contract', 'other']
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 export function InvoiceDocuments({
   invoiceId,
@@ -56,6 +51,10 @@ export function InvoiceDocuments({
   })
 
   const refresh = () => {
+    // Clearing the error here, not only after an upload: a refused file
+    // leaves a message on screen, and if it survives the next successful
+    // action it stops describing anything that is true.
+    setError(null)
     void queryClient.invalidateQueries({ queryKey: ['invoice-attachments', invoiceId] })
     void queryClient.invalidateQueries({ queryKey: ['invoice-document', invoiceId] })
     onChanged?.()
@@ -63,10 +62,7 @@ export function InvoiceDocuments({
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => invoicesApi.attachments.upload(invoiceId, file, { kind }),
-    onSuccess: () => {
-      setError(null)
-      refresh()
-    },
+    onSuccess: refresh,
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail ?? t('invoices.documents.uploadFailed'))
@@ -193,7 +189,7 @@ export function InvoiceDocuments({
                       <span className="text-xs text-muted-foreground mt-0.5 block">
                         {t(`invoices.documents.kind.${attachment.kind}`)}
                         {' · '}
-                        {formatSize(attachment.size)}
+                        {formatFileSize(attachment.size)}
                         {attachment.issued_at ? ` · ${showDate(attachment.issued_at)}` : ''}
                       </span>
                     </span>
@@ -271,8 +267,7 @@ export function InvoiceSourceDocument({
     }
   }, [invoiceId, file.id])
 
-  const isPdf = file.content_type === 'application/pdf'
-  const isImage = file.content_type.startsWith('image/')
+  const preview = previewKind(file.content_type)
 
   return (
     <div className="rounded-xl border border-border bg-muted/50 p-3 sm:p-8">
@@ -286,7 +281,7 @@ export function InvoiceSourceDocument({
       >
         {!url ? (
           <div className="h-[520px]" />
-        ) : isPdf ? (
+        ) : preview === 'pdf' ? (
           // An <iframe>, not an <object>: both hand the file to Chrome's
           // PDF viewer, but the object element is a replaced element the
           // plugin can resize past its box, and it takes the page layout
@@ -296,7 +291,7 @@ export function InvoiceSourceDocument({
             title={file.filename}
             className="w-full h-[1123px] max-h-[80vh] border-0 block"
           />
-        ) : isImage ? (
+        ) : preview === 'image' ? (
           <img src={url} alt={file.filename} className="w-full" />
         ) : (
           <div className="p-8 text-center">
@@ -314,6 +309,33 @@ export function InvoiceSourceDocument({
           </Button>
         </div>
       )}
+    </div>
+  )
+}
+
+
+/**
+ * An imported invoice whose file has not been filed yet.
+ *
+ * Drawing our own page here would be the very thing the aggregator
+ * exists to stop: a blank sheet in our layout, standing in for a
+ * document a supplier issued and we have not received a copy of. Better
+ * to say what is missing and where it goes.
+ */
+export function MissingSourceDocument() {
+  const { t } = useTranslation()
+  return (
+    <div
+      className="rounded-xl border border-border bg-muted/50 px-6 py-16 text-center"
+      data-testid="invoice-missing-source"
+    >
+      <FileText className="h-6 w-6 mx-auto text-muted-foreground" />
+      <p className="mt-3 text-sm font-medium text-foreground">
+        {t('invoices.documents.notOurs')}
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
+        {t('invoices.documents.notOursHint')}
+      </p>
     </div>
   )
 }

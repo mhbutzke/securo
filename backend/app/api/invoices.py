@@ -433,6 +433,20 @@ async def download_pdf(
             },
         )
 
+    # Nothing filed and we did not write it: there is no document to hand
+    # over. Rendering one would produce a page for a document somebody
+    # else issued, which is the invention this module exists to stop.
+    # Refused here as well as hidden in the UI, because a rule enforced
+    # only in a button is a rule the next caller does not know about.
+    if invoice.origin == "imported":
+        raise _http(
+            InvoiceError(
+                "no_document_filed",
+                "This document was issued elsewhere. Attach the file that was received.",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        )
+
     document = await _document(session, invoice, ctx.workspace)
     pdf = invoice_pdf.render_pdf(document)
     filename = f"{document.number or 'draft'}.pdf".replace("/", "-")
