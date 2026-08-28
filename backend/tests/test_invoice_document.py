@@ -763,3 +763,40 @@ async def test_an_imported_number_is_rendered_with_the_source_prefix(
     ours = await make_invoice(client, biz_headers)
     doc = await client.get(f"/api/invoices/{ours['id']}/document", headers=biz_headers)
     assert doc.json()["number"] == "INV-1"
+
+
+@pytest.mark.asyncio
+async def test_our_identity_stays_off_a_supplier_document(client: AsyncClient, biz_headers):
+    """Our bank details under "pay to" on a bill we owe state the opposite
+    of what is true, and our logo brands a page we did not write."""
+    await client.patch(
+        "/api/invoices/settings",
+        headers=biz_headers,
+        json={
+            "logo_url": "https://example.com/our-logo.png",
+            "payment_details": "Banco 001 · Ag 1234 · CC 56789-0",
+            "footer_note": "Obrigado pela preferencia!",
+            "accent_color": "#FF0000",
+        },
+    )
+    bill = await make_invoice(
+        client, biz_headers, direction="payable", origin="imported",
+        external_source="erp", external_id="FAT-1",
+    )
+    doc = (
+        await client.get(f"/api/invoices/{bill['id']}/document", headers=biz_headers)
+    ).json()
+    assert doc["logo_url"] is None
+    assert doc["payment_details"] is None
+    assert doc["footer_note"] is None
+    assert doc["accent_color"] != "#FF0000"
+
+    # On our own invoice every one of them is still printed.
+    ours = await make_invoice(client, biz_headers)
+    doc = (
+        await client.get(f"/api/invoices/{ours['id']}/document", headers=biz_headers)
+    ).json()
+    assert doc["logo_url"] == "https://example.com/our-logo.png"
+    assert doc["payment_details"] == "Banco 001 \u00b7 Ag 1234 \u00b7 CC 56789-0"
+    assert doc["footer_note"] == "Obrigado pela preferencia!"
+    assert doc["accent_color"] == "#FF0000"

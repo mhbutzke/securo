@@ -415,13 +415,24 @@ async def build_document(
         # and this is never consulted again — switching the interface to
         # English must not retitle a document already in a client's hands.
         labels=_label_map(template, snapshot.get("locale") if snapshot else workspace.locale),
+        # Logo, accent, payment details and footer are the *issuer's*
+        # identity, and on a payable the issuer is the supplier. Ours have
+        # no business on their page: the logo would brand their document
+        # with our mark, and payment details are worse than cosmetic —
+        # printing our bank account under "pay to" on a bill we owe states
+        # the opposite of what is true. We hold none of theirs, so the
+        # blocks are simply left empty rather than filled with a stand-in.
         accent_color=(
-            issued_or_live("accent_color", settings.accent_color) or DEFAULT_ACCENT
+            DEFAULT_ACCENT
+            if payable
+            else (issued_or_live("accent_color", settings.accent_color) or DEFAULT_ACCENT)
         ),
-        logo_url=issued_or_live("logo_url", settings.logo_url),
-        payment_details=issued_or_live("payment_details", settings.payment_details),
+        logo_url=None if payable else issued_or_live("logo_url", settings.logo_url),
+        payment_details=(
+            None if payable else issued_or_live("payment_details", settings.payment_details)
+        ),
         notes=invoice.notes,
-        footer_note=issued_or_live("footer_note", settings.footer_note),
+        footer_note=None if payable else issued_or_live("footer_note", settings.footer_note),
         custom_fields=_custom_field_pairs(template, invoice.custom_fields),
         has_line_items=bool(invoice.lines),
         direction=invoice.direction,
