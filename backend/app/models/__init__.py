@@ -26,6 +26,7 @@ from app.models.transaction_split import TransactionSplit
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.invoice import Invoice, InvoiceAllocation, InvoiceLine, InvoiceSettings
+from app.models.invoice_attachment import InvoiceAttachment
 
 # Side-effect import: register the before_insert listener that auto-stamps
 # workspace_id from user_id on financial entities. Imported last so all
@@ -69,6 +70,7 @@ __all__ = [
     "InvoiceAllocation",
     "InvoiceLine",
     "InvoiceSettings",
+    "InvoiceAttachment",
     "collection_accounts",
     "collection_asset_groups",
 ]

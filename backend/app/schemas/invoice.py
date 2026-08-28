@@ -85,11 +85,12 @@ class InvoiceCreate(BaseModel):
     origin: Optional[InvoiceOrigin] = None
     external_source: Optional[str] = Field(default=None, max_length=50)
     external_id: Optional[str] = Field(default=None, max_length=255)
-    #: The number the source gave it. Only meaningful on an import: a
-    #: document written here is numbered from this workspace's own
-    #: sequence and never from a request body.
-    number: Optional[int] = Field(default=None, ge=0)
-    series: Optional[str] = Field(default=None, max_length=20)
+    #: The name the source gave it, exactly as it reads. Text, not an
+    #: integer plus a series: `2026/A/0031` is a name, and treating it as
+    #: a number loses the padding and invents a sequence we do not own.
+    #: Ignored on a document written here, which is numbered from this
+    #: workspace's own counter.
+    external_number: Optional[str] = Field(default=None, max_length=60)
     payee_id: Optional[uuid.UUID] = None
     issue_date: Optional[_Date] = None
     # Optional: falls back to the workspace's default payment terms, so
@@ -141,6 +142,7 @@ class InvoiceRead(BaseModel):
     external_id: Optional[str] = None
     number: Optional[int]
     series: Optional[str]
+    external_number: Optional[str] = None
     status: InvoiceStatus
     #: The derived answers. Defaults exist only so the ORM row can be
     #: validated before they are attached; `api/invoices.py::_serialize`
@@ -293,3 +295,32 @@ class InvoiceSettingsUpdate(BaseModel):
     #: Labels and custom-field definitions. Free-form by design: adding a
     #: field a workspace needs must never be a database migration.
     template: Optional[dict[str, Any]] = None
+
+
+#: What a filed document proves. Roles, not file types — the vocabulary
+#: that names them for a user comes from the jurisdiction pack.
+InvoiceAttachmentKind = Literal["bill", "fiscal", "receipt", "contract", "other"]
+
+
+class InvoiceAttachmentRead(BaseModel):
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    kind: str
+    #: True on the one file that *is* the document. What `/pdf` serves and
+    #: what the screen shows instead of a page drawn from our own fields.
+    is_primary: bool
+    document_number: Optional[str] = None
+    issued_at: Optional[_Date] = None
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InvoiceAttachmentUpdate(BaseModel):
+    kind: Optional[InvoiceAttachmentKind] = None
+    document_number: Optional[str] = Field(default=None, max_length=120)
+    issued_at: Optional[_Date] = None
+    is_primary: Optional[bool] = None

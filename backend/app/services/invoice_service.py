@@ -34,6 +34,9 @@ from app.models.invoice import (
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace, WorkspaceTaxId
+# Safe at module level: the attachment service reaches for models and the
+# storage provider, never back into this one.
+from app.services import invoice_attachment_service
 
 ZERO = Decimal("0.00")
 
@@ -606,6 +609,10 @@ async def create_invoice(
         origin=origin,
         external_source=data.get("external_source"),
         external_id=data.get("external_id"),
+        # Only an import has one. On a local document our own counter
+        # names it, and a second name would be a second answer to the
+        # same question.
+        external_number=(data.get("external_number") if origin == "imported" else None),
         notes=data.get("notes"),
         internal_notes=data.get("internal_notes"),
         custom_fields=data.get("custom_fields"),
@@ -648,10 +655,6 @@ async def create_invoice(
         locked = await _settings_for_update(session, workspace_id)
         workspace = await session.get(Workspace, workspace_id)
         _issue(invoice, locked, workspace)
-        # The number the source gave it, when it gave one. Never ours.
-        if invoice.origin == "imported":
-            invoice.number = data.get("number")
-            invoice.series = data.get("series")
 
     await session.flush()
     return invoice
@@ -846,6 +849,11 @@ async def delete_invoice(session: AsyncSession, invoice: Invoice) -> None:
         raise InvoiceError(
             "only_drafts_deletable", "An issued invoice is never deleted — void it instead"
         )
+    # The attachment rows go with the invoice through the cascade, but the
+    # stored files have to be asked for by name — nothing in the database
+    # reaches into the storage provider. Left out, every deleted draft
+    # would leave its uploads behind forever.
+    await invoice_attachment_service.cleanup_files(session, invoice.id)
     await session.delete(invoice)
     await session.flush()
 

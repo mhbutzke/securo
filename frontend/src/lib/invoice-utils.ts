@@ -74,11 +74,11 @@ export function availableActions(invoice: Invoice): {
  *  Live settings are consulted only when there is no snapshot at all.
  *
  *  None of that applies to a document we did not write. An import arrives
- *  already named, and the prefix it arrived with lives in `series` — ours
- *  would rename a supplier's reference into our own numbering. */
+ *  already named, and that name is reproduced verbatim from
+ *  `external_number` — ours would rename a supplier's reference. */
 export function displayNumber(invoice: Invoice, prefix?: string | null): string | null {
+  if (invoice.origin === 'imported') return invoice.external_number || null
   if (invoice.number == null) return null
-  if (invoice.origin === 'imported') return `${invoice.series ?? ''}${invoice.number}`
   const resolved = invoice.snapshot
     ? ((invoice.snapshot.number_prefix as string | null) ?? '')
     : (prefix ?? '')

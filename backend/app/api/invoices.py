@@ -32,7 +32,12 @@ from app.schemas.invoice import (
     IssuerProfileUpdate,
     ShareLinkRead,
 )
-from app.services import invoice_document, invoice_pdf, invoice_service
+from app.services import (
+    invoice_attachment_service,
+    invoice_document,
+    invoice_pdf,
+    invoice_service,
+)
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
 
@@ -387,7 +392,22 @@ async def read_document(
     """
     invoice = await _load(session, invoice_id, ctx.workspace.id)
     document = await _document(session, invoice, ctx.workspace)
-    return invoice_document.document_payload(document)
+    payload = invoice_document.document_payload(document)
+
+    # If a real document was filed, say so. The resolved page is still
+    # returned — it is the summary the screen shows around the file — but
+    # the reader now knows a page exists that nobody has to redraw.
+    primary = await invoice_attachment_service.primary_for(session, invoice.id)
+    payload["source_file"] = (
+        {
+            "id": str(primary.id),
+            "filename": primary.filename,
+            "content_type": primary.content_type,
+        }
+        if primary is not None
+        else None
+    )
+    return payload
 
 
 @router.get("/{invoice_id}/pdf")
@@ -397,6 +417,22 @@ async def download_pdf(
     session: AsyncSession = Depends(get_async_session),
 ):
     invoice = await _load(session, invoice_id, ctx.workspace.id)
+
+    # When a real document was filed, that file is the answer. Rendering
+    # our own page over the top of one we were handed produces something
+    # that looks official and is not — and on a supplier's bill it would
+    # be a page nobody issued.
+    primary = await invoice_attachment_service.primary_for(session, invoice.id)
+    if primary is not None:
+        data = await invoice_attachment_service.read_bytes(session, primary)
+        return Response(
+            content=data,
+            media_type=primary.content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{primary.filename}"'
+            },
+        )
+
     document = await _document(session, invoice, ctx.workspace)
     pdf = invoice_pdf.render_pdf(document)
     filename = f"{document.number or 'draft'}.pdf".replace("/", "-")

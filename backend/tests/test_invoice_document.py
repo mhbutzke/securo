@@ -748,17 +748,17 @@ async def test_an_imported_number_is_rendered_with_the_source_prefix(
     )
     imported = await make_invoice(
         client, biz_headers, origin="imported",
-        external_source="erp", external_id="FAT-9931", number=9931, series="FAT-",
+        external_source="erp", external_id="FAT-9931", external_number="FAT-9931",
     )
     doc = await client.get(f"/api/invoices/{imported['id']}/document", headers=biz_headers)
     assert doc.json()["number"] == "FAT-9931"
 
     bare = await make_invoice(
         client, biz_headers, origin="imported",
-        external_source="erp", external_id="7", number=7,
+        external_source="erp", external_id="7",
     )
     doc = await client.get(f"/api/invoices/{bare['id']}/document", headers=biz_headers)
-    assert doc.json()["number"] == "7"
+    assert doc.json()["number"] is None
 
     ours = await make_invoice(client, biz_headers)
     doc = await client.get(f"/api/invoices/{ours['id']}/document", headers=biz_headers)

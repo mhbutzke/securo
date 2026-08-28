@@ -1125,9 +1125,10 @@ async def test_an_import_never_takes_a_number_from_our_sequence(
 
     imported = await _create(
         client, biz_headers, total="1500.00", origin="imported",
-        external_source="erp", external_id="FAT-9931", number=9931,
+        external_source="erp", external_id="FAT-9931", external_number="FAT-9931",
     )
-    assert imported["number"] == 9931
+    assert imported["external_number"] == "FAT-9931"
+    assert imported["number"] is None
 
     # Our sequence did not move: the next document we write is 2.
     nxt = await _create(client, biz_headers, total="200.00")
@@ -1145,6 +1146,7 @@ async def test_an_import_with_no_number_stays_unnumbered(
         external_source="erp", external_id="no-number",
     )
     assert imported["number"] is None
+    assert imported["external_number"] is None
     # And it is open, not draft: somebody issued it elsewhere, and a
     # draft state would claim we are still writing it.
     assert imported["status"] == "open"
@@ -1186,3 +1188,26 @@ async def test_the_rule_is_provenance_not_direction(client: AsyncClient, biz_hea
         ours = await _create(client, biz_headers, total="120.00", direction=direction)
         assert ours["snapshot"] is not None, direction
         assert ours["number"] is not None, direction
+
+
+@pytest.mark.asyncio
+async def test_a_source_name_is_kept_verbatim(client: AsyncClient, biz_headers):
+    """`2026/A/0031` is a name, not arithmetic. An integer column plus a
+    series drops the padding and invents a sequence we do not own."""
+    imported = await _create(
+        client, biz_headers, total="500.00", origin="imported",
+        external_source="erp", external_id="ax-1", external_number="2026/A/0031",
+    )
+    assert imported["external_number"] == "2026/A/0031"
+    doc = await client.get(
+        f"/api/invoices/{imported['id']}/document", headers=biz_headers
+    )
+    assert doc.json()["number"] == "2026/A/0031"
+
+
+@pytest.mark.asyncio
+async def test_a_document_we_wrote_ignores_a_source_name(client: AsyncClient, biz_headers):
+    """Two names for one document is two answers to the same question."""
+    ours = await _create(client, biz_headers, total="100.00", external_number="NOT-OURS")
+    assert ours["external_number"] is None
+    assert ours["number"] == 1

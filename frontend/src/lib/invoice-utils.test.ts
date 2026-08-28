@@ -27,6 +27,7 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     external_id: null,
     number: 7,
     series: null,
+    external_number: null,
     status: 'open',
     state: 'open',
     issue_date: '2026-08-01',
@@ -152,13 +153,28 @@ describe('displayNumber', () => {
   })
 
   it('never puts our prefix on a document we did not write', () => {
-    const imported = makeInvoice({ origin: 'imported', series: 'FAT-', number: 9931, snapshot: null })
+    const imported = makeInvoice({
+      origin: 'imported',
+      external_number: 'FAT-9931',
+      number: null,
+      snapshot: null,
+    })
     expect(displayNumber(imported, 'INV-')).toBe('FAT-9931')
   })
 
-  it('shows an unprefixed import as the bare number the source gave it', () => {
-    const imported = makeInvoice({ origin: 'imported', series: null, number: 9931, snapshot: null })
-    expect(displayNumber(imported, 'INV-')).toBe('9931')
+  it('reproduces a padded source name our own column could not hold', () => {
+    const imported = makeInvoice({
+      origin: 'imported',
+      external_number: '2026/A/0031',
+      number: null,
+      snapshot: null,
+    })
+    expect(displayNumber(imported, 'INV-')).toBe('2026/A/0031')
+  })
+
+  it('says nothing when the source named the document nothing', () => {
+    const imported = makeInvoice({ origin: 'imported', external_number: null, number: null })
+    expect(displayNumber(imported, 'INV-')).toBeNull()
   })
 
   it('treats a snapshot with no prefix as a real answer, not a gap', () => {

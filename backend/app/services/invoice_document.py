@@ -373,20 +373,20 @@ async def build_document(
 
     template = snapshot.get("template") if snapshot else settings.template
 
-    # The prefix is ours to add only on a document we wrote. An import
-    # arrives already named — the source put whatever it uses in front of
-    # its own number — so reaching for our prefix here would restyle
-    # someone else's reference into ours. `series` is where that arriving
-    # prefix is kept; when the source gave none, the bare number is the
-    # whole of what it is called.
-    prefix = (
-        (invoice.series or "")
-        if invoice.origin == "imported"
-        else ((snapshot.get("number_prefix") if snapshot else settings.number_prefix) or "")
-    )
+    # An import arrives already named, and that name is reproduced
+    # verbatim. Only a document we wrote takes our prefix: putting it on
+    # someone else's reference would restyle their document into our
+    # numbering.
+    if invoice.origin == "imported":
+        number = invoice.external_number or None
+    elif invoice.number is not None:
+        prefix = (snapshot.get("number_prefix") if snapshot else settings.number_prefix) or ""
+        number = f"{prefix}{invoice.number}"
+    else:
+        number = None
 
     return InvoiceDocument(
-        number=(f"{prefix}{invoice.number}" if invoice.number is not None else None),
+        number=number,
         status=invoice.status,
         state=invoice_service.derive_state(invoice),
         issue_date=invoice.issue_date,

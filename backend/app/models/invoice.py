@@ -45,6 +45,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.invoice_attachment import InvoiceAttachment
     from app.models.payee import Payee
     from app.models.transaction import Transaction
 
@@ -148,13 +149,13 @@ class Invoice(Base):
         # a constraint because the alternative is trusting every future
         # code path to remember.
         #
-        # Imported rows are outside it: their identity came with them, and
-        # a source that numbers nothing leaves the column null rather than
-        # borrowing from our sequence.
+        # An imported row never carries one of ours at all: its name lives
+        # in `external_number`, and leaving this column null is what keeps
+        # our sequence answerable for nothing but our own documents.
         CheckConstraint(
-            "(status = 'draft' AND number IS NULL)"
-            " OR (status <> 'draft' AND origin = 'local' AND number IS NOT NULL)"
-            " OR origin = 'imported'",
+            "(origin = 'imported' AND number IS NULL)"
+            " OR (status = 'draft' AND number IS NULL)"
+            " OR (status <> 'draft' AND number IS NOT NULL)",
             name="ck_invoices_number_matches_status",
         ),
         CheckConstraint("total >= 0", name="ck_invoices_total_non_negative"),
@@ -196,8 +197,15 @@ class Invoice(Base):
 
     # Assigned at issuance, gapless within a series, never reused — not
     # even by a voided invoice, which keeps the number it was given.
+    #
+    # Ours alone. An imported document is named in `external_number`
+    # instead: an integer plus a series cannot hold `2026/A/0031` without
+    # dropping the padding and turning the series into a workaround, and
+    # a source's numbering is not a sequence we may reason about — only a
+    # name we must reproduce exactly.
     number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     series: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    external_number: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft", index=True)
 
@@ -263,6 +271,15 @@ class Invoice(Base):
         back_populates="invoice",
         cascade="all, delete-orphan",
         foreign_keys="InvoiceAllocation.invoice_id",
+        lazy="selectin",
+    )
+    # The paper gathered under this debt. Deleting the invoice takes the
+    # rows with it; the stored files are removed by the service, which is
+    # the only layer that can talk to the storage provider.
+    attachments: Mapped[list["InvoiceAttachment"]] = relationship(
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="InvoiceAttachment.created_at",
         lazy="selectin",
     )
 

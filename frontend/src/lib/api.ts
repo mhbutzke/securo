@@ -75,6 +75,7 @@ import type {
   TransactionEditPayload,
   InstallmentSeriesInput,
   TransactionApplyScope,
+  InvoiceAttachment,
 } from '@/types'
 
 const api = axios.create({
@@ -1809,6 +1810,46 @@ export const invoices = {
   },
   unshare: async (id: string): Promise<void> => {
     await api.delete(`/invoices/${id}/share`)
+  },
+  /** The paper gathered under an invoice: the bill, the fiscal document,
+   *  a receipt, the contract behind it. */
+  attachments: {
+    list: async (invoiceId: string): Promise<InvoiceAttachment[]> => {
+      const { data } = await api.get(`/invoices/${invoiceId}/attachments`)
+      return data
+    },
+    upload: async (
+      invoiceId: string,
+      file: File,
+      fields: { kind?: string; document_number?: string; issued_at?: string; is_primary?: boolean } = {},
+    ): Promise<InvoiceAttachment> => {
+      const form = new FormData()
+      form.append('file', file)
+      Object.entries(fields).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
+      })
+      const { data } = await api.post(`/invoices/${invoiceId}/attachments`, form)
+      return data
+    },
+    /** Same reason as `pdf` above: the route needs headers a plain
+     *  <a href> would not carry, so the bytes come back as a blob. */
+    blobUrl: async (invoiceId: string, attachmentId: string): Promise<string> => {
+      const { data } = await api.get(`/invoices/${invoiceId}/attachments/${attachmentId}`, {
+        responseType: 'blob',
+      })
+      return URL.createObjectURL(data)
+    },
+    update: async (
+      invoiceId: string,
+      attachmentId: string,
+      payload: Partial<Pick<InvoiceAttachment, 'kind' | 'document_number' | 'issued_at' | 'is_primary'>>,
+    ): Promise<InvoiceAttachment> => {
+      const { data } = await api.patch(`/invoices/${invoiceId}/attachments/${attachmentId}`, payload)
+      return data
+    },
+    remove: async (invoiceId: string, attachmentId: string): Promise<void> => {
+      await api.delete(`/invoices/${invoiceId}/attachments/${attachmentId}`)
+    },
   },
 }
 

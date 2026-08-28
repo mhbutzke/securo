@@ -331,7 +331,31 @@
     "noSupplier": "Sem fornecedor",
     "receivedDocument": "Documento recebido",
     "receivedDocumentHint": "Emitido pelo seu fornecedor. Exibido como registrado, não como algo que você enviou.",
-    "fiscalYear": "Exercício {{year}}"
+    "fiscalYear": "Exercício {{year}}",
+    "documents": {
+      "title": "Documentos",
+      "add": "Adicionar",
+      "empty": "Nenhum documento anexado ainda. A fatura, a nota fiscal e o comprovante ficam aqui.",
+      "file": "Arquivo",
+      "reference": "Referência",
+      "primary": "O documento",
+      "primaryHint": "Ao baixar esta fatura, é este arquivo que é entregue",
+      "makePrimary": "Usar como o documento",
+      "remove": "Remover documento",
+      "uploadFailed": "Não foi possível adicionar esse arquivo.",
+      "original": "Documento original",
+      "originalHint": "Este é o {{filename}}, como foi recebido. Nada aqui foi redesenhado.",
+      "openOriginal": "Abrir o original",
+      "cannotPreview": "Este arquivo não pode ser visualizado aqui. Abra-o para ver.",
+      "kind": {
+        "bill": "Fatura",
+        "fiscal": "Nota fiscal",
+        "receipt": "Comprovante",
+        "contract": "Contrato",
+        "other": "Outro"
+      },
+      "actions": "Ações"
+    }
   },
   "collections": {
     "title": "Coleções",

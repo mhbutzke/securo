@@ -331,7 +331,31 @@
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
     "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
-    "fiscalYear": "FY {{year}}"
+    "fiscalYear": "FY {{year}}",
+    "documents": {
+      "title": "Dokumenty",
+      "add": "Dodaj",
+      "actions": "Akcje",
+      "empty": "Nie dodano jeszcze żadnych dokumentów. Faktura, dokument fiskalny i potwierdzenie należą tutaj.",
+      "file": "Plik",
+      "reference": "Numer",
+      "primary": "Dokument",
+      "primaryHint": "Pobranie tej faktury zwraca ten plik",
+      "makePrimary": "Ustaw jako dokument",
+      "remove": "Usuń dokument",
+      "uploadFailed": "Nie udało się dodać tego pliku.",
+      "original": "Dokument oryginalny",
+      "originalHint": "To jest {{filename}}, w postaci w jakiej został otrzymany. Nic tutaj nie zostało przerysowane.",
+      "openOriginal": "Otwórz oryginał",
+      "cannotPreview": "Tego pliku nie można tu wyświetlić. Otwórz go, aby zobaczyć.",
+      "kind": {
+        "bill": "Faktura",
+        "fiscal": "Dokument fiskalny",
+        "receipt": "Potwierdzenie",
+        "contract": "Umowa",
+        "other": "Inne"
+      }
+    }
   },
   "collections": {
     "title": "Kolekcje",

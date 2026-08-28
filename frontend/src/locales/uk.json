@@ -331,7 +331,31 @@
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
     "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
-    "fiscalYear": "FY {{year}}"
+    "fiscalYear": "FY {{year}}",
+    "documents": {
+      "title": "Документи",
+      "add": "Додати",
+      "actions": "Дії",
+      "empty": "Документів ще немає. Рахунок, податковий документ і квитанція зберігаються тут.",
+      "file": "Файл",
+      "reference": "Номер",
+      "primary": "Сам документ",
+      "primaryHint": "Під час завантаження цього рахунка видається саме цей файл",
+      "makePrimary": "Зробити основним документом",
+      "remove": "Видалити документ",
+      "uploadFailed": "Не вдалося додати цей файл.",
+      "original": "Оригінал документа",
+      "originalHint": "Це {{filename}} у тому вигляді, у якому його отримано. Тут нічого не перемальовано.",
+      "openOriginal": "Відкрити оригінал",
+      "cannotPreview": "Цей файл не можна переглянути тут. Відкрийте його, щоб побачити.",
+      "kind": {
+        "bill": "Рахунок",
+        "fiscal": "Податковий документ",
+        "receipt": "Квитанція",
+        "contract": "Договір",
+        "other": "Інше"
+      }
+    }
   },
   "collections": {
     "title": "Колекції",

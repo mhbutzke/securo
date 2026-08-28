@@ -331,7 +331,31 @@
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
     "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
-    "fiscalYear": "FY {{year}}"
+    "fiscalYear": "FY {{year}}",
+    "documents": {
+      "title": "Documenten",
+      "add": "Toevoegen",
+      "actions": "Acties",
+      "empty": "Nog geen documenten opgeslagen. De factuur, het fiscale document en het betaalbewijs horen hier.",
+      "file": "Bestand",
+      "reference": "Referentie",
+      "primary": "Het document",
+      "primaryHint": "Bij het downloaden van deze factuur wordt dit bestand geleverd",
+      "makePrimary": "Gebruiken als het document",
+      "remove": "Document verwijderen",
+      "uploadFailed": "Dat bestand kon niet worden toegevoegd.",
+      "original": "Origineel document",
+      "originalHint": "Dit is {{filename}}, zoals het is ontvangen. Hier is niets opnieuw getekend.",
+      "openOriginal": "Open het origineel",
+      "cannotPreview": "Dit bestand kan hier niet worden weergegeven. Open het om het te bekijken.",
+      "kind": {
+        "bill": "Factuur",
+        "fiscal": "Fiscaal document",
+        "receipt": "Betaalbewijs",
+        "contract": "Contract",
+        "other": "Overig"
+      }
+    }
   },
   "collections": {
     "title": "Collecties",

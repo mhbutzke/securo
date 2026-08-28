@@ -331,7 +331,31 @@
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
     "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
-    "fiscalYear": "FY {{year}}"
+    "fiscalYear": "FY {{year}}",
+    "documents": {
+      "title": "Документы",
+      "add": "Добавить",
+      "actions": "Действия",
+      "empty": "Документов пока нет. Счёт, налоговый документ и квитанция хранятся здесь.",
+      "file": "Файл",
+      "reference": "Номер",
+      "primary": "Сам документ",
+      "primaryHint": "При скачивании этого счёта выдаётся именно этот файл",
+      "makePrimary": "Сделать основным документом",
+      "remove": "Удалить документ",
+      "uploadFailed": "Не удалось добавить этот файл.",
+      "original": "Оригинал документа",
+      "originalHint": "Это {{filename}} в том виде, в каком он был получен. Здесь ничего не перерисовано.",
+      "openOriginal": "Открыть оригинал",
+      "cannotPreview": "Этот файл нельзя просмотреть здесь. Откройте его, чтобы увидеть.",
+      "kind": {
+        "bill": "Счёт",
+        "fiscal": "Налоговый документ",
+        "receipt": "Квитанция",
+        "contract": "Договор",
+        "other": "Другое"
+      }
+    }
   },
   "collections": {
     "title": "Коллекции",

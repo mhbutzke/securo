@@ -1075,6 +1075,25 @@ export interface InvoiceAllocation {
   } | null
 }
 
+/** What a filed document proves. Roles, not file types — a nota fiscal,
+ *  a facture and a Rechnung are all `fiscal`, and each locale names it. */
+export type InvoiceAttachmentKind = 'bill' | 'fiscal' | 'receipt' | 'contract' | 'other'
+
+export interface InvoiceAttachment {
+  id: string
+  invoice_id: string
+  kind: InvoiceAttachmentKind
+  /** True on the one file that *is* the document. Downloading the invoice
+   *  hands this file over instead of a page drawn from our own fields. */
+  is_primary: boolean
+  document_number: string | null
+  issued_at: string | null
+  filename: string
+  content_type: string
+  size: number
+  created_at: string
+}
+
 export interface Invoice {
   id: string
   payee_id: string | null
@@ -1086,6 +1105,9 @@ export interface Invoice {
   external_id: string | null
   number: number | null
   series: string | null
+  /** The name an imported document arrived with, reproduced verbatim.
+   *  Null on anything we wrote, which our own counter names instead. */
+  external_number: string | null
   status: InvoiceStatus
   state: InvoiceState
   issue_date: string
@@ -1224,6 +1246,10 @@ export interface InvoiceDocumentPayload {
   /** False when the invoice is only tracking money — the common case
    *  where the fiscal document was issued somewhere else entirely. */
   has_line_items: boolean
+  /** Set when a real document was filed under this invoice. When it is,
+   *  that file is the document and the page below is only a summary of
+   *  it — nothing here needs redrawing. */
+  source_file: { id: string; filename: string; content_type: string } | null
 }
 
 export interface IssuerTaxId {

@@ -42,6 +42,7 @@ import {
   StateBadge,
 } from '@/components/invoice-ui'
 import { InvoiceDocumentView } from '@/components/invoice-document'
+import { InvoiceDocuments, InvoiceSourceDocument } from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import type { Invoice, InvoiceLineInput } from '@/types'
 import { cn } from '@/lib/utils'
@@ -413,10 +414,21 @@ export default function InvoiceDetailPage() {
             </SectionCard>
           )}
           {documentPayload ? (
-            <InvoiceDocumentView document={documentPayload} />
+            // A filed document outranks a rendered one. When the supplier
+            // sent the page, showing ours instead would invent a second
+            // version of a document that already exists.
+            documentPayload.source_file ? (
+              <InvoiceSourceDocument
+                invoiceId={invoice.id}
+                file={documentPayload.source_file}
+              />
+            ) : (
+              <InvoiceDocumentView document={documentPayload} />
+            )
           ) : (
             <Skeleton className="h-[520px] w-full rounded-xl" />
           )}
+          <InvoiceDocuments invoiceId={invoice.id} canWrite={canWrite} onChanged={refresh} />
         </div>
       ) : (
         <div className="space-y-5">

@@ -331,7 +331,31 @@
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
     "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
-    "fiscalYear": "FY {{year}}"
+    "fiscalYear": "FY {{year}}",
+    "documents": {
+      "title": "Documents",
+      "add": "Add",
+      "empty": "No documents filed yet. The bill, the fiscal document and the receipt all belong here.",
+      "file": "File",
+      "reference": "Reference",
+      "primary": "The document",
+      "primaryHint": "Downloading this invoice hands over this file",
+      "makePrimary": "Use as the document",
+      "remove": "Remove document",
+      "uploadFailed": "That file could not be added.",
+      "original": "Original document",
+      "originalHint": "This is {{filename}}, as it was received. Nothing here was redrawn.",
+      "openOriginal": "Open the original",
+      "cannotPreview": "This file cannot be previewed here. Open it to view it.",
+      "kind": {
+        "bill": "Bill",
+        "fiscal": "Fiscal document",
+        "receipt": "Receipt",
+        "contract": "Contract",
+        "other": "Other"
+      },
+      "actions": "Actions"
+    }
   },
   "collections": {
     "title": "Collections",

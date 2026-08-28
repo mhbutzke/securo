@@ -331,7 +331,31 @@
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
     "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
-    "fiscalYear": "FY {{year}}"
+    "fiscalYear": "FY {{year}}",
+    "documents": {
+      "title": "Dokumente",
+      "add": "Hinzufügen",
+      "actions": "Aktionen",
+      "empty": "Noch keine Dokumente abgelegt. Die Rechnung, das Steuerdokument und der Beleg gehören hierher.",
+      "file": "Datei",
+      "reference": "Referenz",
+      "primary": "Das Dokument",
+      "primaryHint": "Beim Herunterladen dieser Rechnung wird diese Datei ausgegeben",
+      "makePrimary": "Als das Dokument verwenden",
+      "remove": "Dokument entfernen",
+      "uploadFailed": "Diese Datei konnte nicht hinzugefügt werden.",
+      "original": "Originaldokument",
+      "originalHint": "Dies ist {{filename}}, so wie es eingegangen ist. Hier wurde nichts neu gezeichnet.",
+      "openOriginal": "Original öffnen",
+      "cannotPreview": "Diese Datei kann hier nicht angezeigt werden. Zum Ansehen bitte öffnen.",
+      "kind": {
+        "bill": "Rechnung",
+        "fiscal": "Steuerdokument",
+        "receipt": "Beleg",
+        "contract": "Vertrag",
+        "other": "Sonstiges"
+      }
+    }
   },
   "collections": {
     "title": "Sammlungen",
