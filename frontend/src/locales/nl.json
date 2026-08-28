@@ -335,10 +335,7 @@
     "documents": {
       "title": "Documenten",
       "add": "Toevoegen",
-      "actions": "Acties",
       "empty": "Nog geen documenten opgeslagen. De factuur, het fiscale document en het betaalbewijs horen hier.",
-      "file": "Bestand",
-      "reference": "Referentie",
       "primary": "Het document",
       "primaryHint": "Bij het downloaden van deze factuur wordt dit bestand geleverd",
       "makePrimary": "Gebruiken als het document",
@@ -356,7 +353,10 @@
         "other": "Overig"
       },
       "notOurs": "Het document is elders uitgegeven",
-      "notOursHint": "Voeg het ontvangen bestand toe, dan wordt het hier getoond zoals het binnenkwam."
+      "notOursHint": "Voeg het ontvangen bestand toe, dan wordt het hier getoond zoals het binnenkwam.",
+      "ourPage": "Factuur",
+      "rendered": "Gegenereerde pagina",
+      "kindLabel": "Documenttype"
     }
   },
   "collections": {

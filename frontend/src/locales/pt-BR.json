@@ -336,8 +336,6 @@
       "title": "Documentos",
       "add": "Adicionar",
       "empty": "Nenhum documento anexado ainda. A fatura, a nota fiscal e o comprovante ficam aqui.",
-      "file": "Arquivo",
-      "reference": "Referência",
       "primary": "O documento",
       "primaryHint": "Ao baixar esta fatura, é este arquivo que é entregue",
       "makePrimary": "Usar como o documento",
@@ -354,9 +352,11 @@
         "contract": "Contrato",
         "other": "Outro"
       },
-      "actions": "Ações",
       "notOurs": "O documento foi emitido em outro lugar",
-      "notOursHint": "Anexe o arquivo que você recebeu e ele será mostrado aqui, exatamente como chegou."
+      "notOursHint": "Anexe o arquivo que você recebeu e ele será mostrado aqui, exatamente como chegou.",
+      "ourPage": "Fatura",
+      "rendered": "Página gerada",
+      "kindLabel": "Tipo de documento"
     }
   },
   "collections": {

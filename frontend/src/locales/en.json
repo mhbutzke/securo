@@ -336,8 +336,6 @@
       "title": "Documents",
       "add": "Add",
       "empty": "No documents filed yet. The bill, the fiscal document and the receipt all belong here.",
-      "file": "File",
-      "reference": "Reference",
       "primary": "The document",
       "primaryHint": "Downloading this invoice hands over this file",
       "makePrimary": "Use as the document",
@@ -354,9 +352,11 @@
         "contract": "Contract",
         "other": "Other"
       },
-      "actions": "Actions",
       "notOurs": "The document was issued elsewhere",
-      "notOursHint": "Attach the file you received and it will be shown here, exactly as it arrived."
+      "notOursHint": "Attach the file you received and it will be shown here, exactly as it arrived.",
+      "ourPage": "Invoice",
+      "rendered": "Generated page",
+      "kindLabel": "Document type"
     }
   },
   "collections": {

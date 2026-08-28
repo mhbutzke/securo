@@ -335,10 +335,7 @@
     "documents": {
       "title": "Dokumenty",
       "add": "Dodaj",
-      "actions": "Akcje",
       "empty": "Nie dodano jeszcze żadnych dokumentów. Faktura, dokument fiskalny i potwierdzenie należą tutaj.",
-      "file": "Plik",
-      "reference": "Numer",
       "primary": "Dokument",
       "primaryHint": "Pobranie tej faktury zwraca ten plik",
       "makePrimary": "Ustaw jako dokument",
@@ -356,7 +353,10 @@
         "other": "Inne"
       },
       "notOurs": "Dokument został wystawiony gdzie indziej",
-      "notOursHint": "Dołącz otrzymany plik, a zostanie pokazany tutaj dokładnie w takiej postaci, w jakiej dotarł."
+      "notOursHint": "Dołącz otrzymany plik, a zostanie pokazany tutaj dokładnie w takiej postaci, w jakiej dotarł.",
+      "ourPage": "Faktura",
+      "rendered": "Wygenerowana strona",
+      "kindLabel": "Typ dokumentu"
     }
   },
   "collections": {

@@ -42,11 +42,7 @@ import {
   StateBadge,
 } from '@/components/invoice-ui'
 import { InvoiceDocumentView } from '@/components/invoice-document'
-import {
-  InvoiceDocuments,
-  InvoiceSourceDocument,
-  MissingSourceDocument,
-} from '@/components/invoice-documents'
+import { InvoiceDocumentBrowser } from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import type { Invoice, InvoiceLineInput } from '@/types'
 import { cn } from '@/lib/utils'
@@ -436,25 +432,22 @@ export default function InvoiceDetailPage() {
             </SectionCard>
           )}
           {documentPayload ? (
-            // A filed document outranks a rendered one. When the supplier
-            // sent the page, showing ours instead would invent a second
-            // version of a document that already exists.
-            documentPayload.source_file ? (
-              <InvoiceSourceDocument
-                invoiceId={invoice.id}
-                file={documentPayload.source_file}
-              />
-            ) : invoice.origin === 'imported' ? (
-              // Somebody else issued this one and we have not been given
-              // the page. Rendering ours would invent it.
-              <MissingSourceDocument />
-            ) : (
-              <InvoiceDocumentView document={documentPayload} />
-            )
+            // Every page this invoice has, in one browser: the files down
+            // the left, the selected one read on the right. Our own
+            // render is one entry among them — and not offered at all on
+            // an import, where drawing it would invent a document
+            // somebody else issued.
+            <InvoiceDocumentBrowser
+              invoiceId={invoice.id}
+              origin={invoice.origin}
+              canWrite={canWrite}
+              ourPageLabel={number}
+              ourPage={<InvoiceDocumentView document={documentPayload} />}
+              onChanged={refresh}
+            />
           ) : (
             <Skeleton className="h-[520px] w-full rounded-xl" />
           )}
-          <InvoiceDocuments invoiceId={invoice.id} canWrite={canWrite} onChanged={refresh} />
         </div>
       ) : (
         <div className="space-y-5">

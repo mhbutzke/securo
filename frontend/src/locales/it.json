@@ -335,10 +335,7 @@
     "documents": {
       "title": "Documenti",
       "add": "Aggiungi",
-      "actions": "Azioni",
       "empty": "Nessun documento archiviato. La fattura, il documento fiscale e la ricevuta vanno qui.",
-      "file": "File",
-      "reference": "Riferimento",
       "primary": "Il documento",
       "primaryHint": "Scaricando questa fattura viene consegnato questo file",
       "makePrimary": "Usa come il documento",
@@ -356,7 +353,10 @@
         "other": "Altro"
       },
       "notOurs": "Il documento è stato emesso altrove",
-      "notOursHint": "Allega il file che hai ricevuto e verrà mostrato qui, esattamente come è arrivato."
+      "notOursHint": "Allega il file che hai ricevuto e verrà mostrato qui, esattamente come è arrivato.",
+      "ourPage": "Fattura",
+      "rendered": "Pagina generata",
+      "kindLabel": "Tipo di documento"
     }
   },
   "collections": {

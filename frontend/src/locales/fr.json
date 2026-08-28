@@ -335,10 +335,7 @@
     "documents": {
       "title": "Documents",
       "add": "Ajouter",
-      "actions": "Actions",
       "empty": "Aucun document classé pour l'instant. La facture, le document fiscal et le reçu ont leur place ici.",
-      "file": "Fichier",
-      "reference": "Référence",
       "primary": "Le document",
       "primaryHint": "Télécharger cette facture remet ce fichier",
       "makePrimary": "Utiliser comme le document",
@@ -356,7 +353,10 @@
         "other": "Autre"
       },
       "notOurs": "Le document a été émis ailleurs",
-      "notOursHint": "Joignez le fichier que vous avez reçu et il s'affichera ici, tel qu'il est arrivé."
+      "notOursHint": "Joignez le fichier que vous avez reçu et il s'affichera ici, tel qu'il est arrivé.",
+      "ourPage": "Facture",
+      "rendered": "Page générée",
+      "kindLabel": "Type de document"
     }
   },
   "collections": {

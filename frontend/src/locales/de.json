@@ -335,10 +335,7 @@
     "documents": {
       "title": "Dokumente",
       "add": "Hinzufügen",
-      "actions": "Aktionen",
       "empty": "Noch keine Dokumente abgelegt. Die Rechnung, das Steuerdokument und der Beleg gehören hierher.",
-      "file": "Datei",
-      "reference": "Referenz",
       "primary": "Das Dokument",
       "primaryHint": "Beim Herunterladen dieser Rechnung wird diese Datei ausgegeben",
       "makePrimary": "Als das Dokument verwenden",
@@ -356,7 +353,10 @@
         "other": "Sonstiges"
       },
       "notOurs": "Das Dokument wurde anderswo ausgestellt",
-      "notOursHint": "Hängen Sie die erhaltene Datei an, dann wird sie hier genau so angezeigt, wie sie eingegangen ist."
+      "notOursHint": "Hängen Sie die erhaltene Datei an, dann wird sie hier genau so angezeigt, wie sie eingegangen ist.",
+      "ourPage": "Rechnung",
+      "rendered": "Erzeugte Seite",
+      "kindLabel": "Dokumenttyp"
     }
   },
   "collections": {
