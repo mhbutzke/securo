@@ -940,3 +940,71 @@ async def test_a_personal_workspace_never_pays_for_the_badge(
     listed = await client.get("/api/transactions?limit=50", headers=headers)
     assert listed.status_code == 200
     assert all(item["invoice_link"] is None for item in listed.json()["items"])
+
+
+# ---------------------------------------------------------------------------
+# Direction: two sides of one ledger, and neither leaks into the other
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_everything_written_today_is_a_receivable(client: AsyncClient, biz_headers):
+    invoice = await _create(client, biz_headers)
+    assert invoice["direction"] == "receivable"
+
+
+@pytest.mark.asyncio
+async def test_a_payable_never_appears_among_receivables(client: AsyncClient, biz_headers):
+    """The whole reason the column exists. A supplier's bill inside
+    "what my clients owe me" is not a filtering nicety, it is a wrong
+    number on the screen someone makes decisions with."""
+    receivable = await _create(client, biz_headers, total="1000.00")
+    payable = await _create(client, biz_headers, total="400.00", direction="payable")
+    assert payable["direction"] == "payable"
+
+    listed = await client.get("/api/invoices", headers=biz_headers)
+    assert [i["id"] for i in listed.json()] == [receivable["id"]]
+
+    explicit = await client.get("/api/invoices?direction=payable", headers=biz_headers)
+    assert [i["id"] for i in explicit.json()] == [payable["id"]]
+
+
+@pytest.mark.asyncio
+async def test_the_totals_are_per_side(client: AsyncClient, biz_headers):
+    await _create(client, biz_headers, total="1000.00")
+    await _create(client, biz_headers, total="400.00", direction="payable")
+
+    receivables = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    assert receivables["outstanding"] == "1000.00"
+
+    payables = (
+        await client.get("/api/invoices/summary?direction=payable", headers=biz_headers)
+    ).json()
+    assert payables["outstanding"] == "400.00"
+
+
+@pytest.mark.asyncio
+async def test_the_counts_are_per_side(client: AsyncClient, biz_headers):
+    await _create(client, biz_headers, total="1000.00")
+    await _create(client, biz_headers, total="400.00", direction="payable")
+
+    assert (
+        await client.get("/api/invoices/facets", headers=biz_headers)
+    ).json()["counts"]["all"] == 1
+    assert (
+        await client.get("/api/invoices/facets?direction=payable", headers=biz_headers)
+    ).json()["counts"]["all"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fetching_one_by_id_is_not_narrowed_by_side(client: AsyncClient, biz_headers):
+    """An id already identifies one row. Scoping the lookup would 404 a
+    payable a caller legitimately asked for."""
+    payable = await _create(client, biz_headers, total="400.00", direction="payable")
+    fetched = await client.get(f"/api/invoices/{payable['id']}", headers=biz_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["direction"] == "payable"
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_side_is_refused(client: AsyncClient, biz_headers):
+    resp = await client.get("/api/invoices?direction=sideways", headers=biz_headers)
+    assert resp.status_code == 422

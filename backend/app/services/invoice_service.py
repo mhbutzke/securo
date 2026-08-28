@@ -255,18 +255,33 @@ def days_overdue(invoice: Invoice, today: Optional[_date] = None) -> int:
 # ---------------------------------------------------------------------------
 # Reading
 # ---------------------------------------------------------------------------
-def _base_query() -> Select:
-    return select(Invoice).options(
-        selectinload(Invoice.lines),
-        selectinload(Invoice.allocations),
+#: The side of the ledger everything currently written belongs to.
+#: Every read narrows to one side: leaving it out would show a supplier's
+#: bill inside "what clients owe me", which is not a filtering nicety but
+#: a wrong number.
+DEFAULT_DIRECTION = "receivable"
+
+
+def _base_query(direction: str = DEFAULT_DIRECTION) -> Select:
+    return (
+        select(Invoice)
+        .where(Invoice.direction == direction)
+        .options(
+            selectinload(Invoice.lines),
+            selectinload(Invoice.allocations),
+        )
     )
 
 
 async def get_invoice(
     session: AsyncSession, invoice_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[Invoice]:
+    # Not narrowed by direction: an id already identifies one row, and
+    # scoping here would 404 a payable a caller legitimately asked for.
     result = await session.execute(
-        _base_query().where(Invoice.id == invoice_id, Invoice.workspace_id == workspace_id)
+        select(Invoice)
+        .options(selectinload(Invoice.lines), selectinload(Invoice.allocations))
+        .where(Invoice.id == invoice_id, Invoice.workspace_id == workspace_id)
     )
     return result.unique().scalar_one_or_none()
 
@@ -277,6 +292,7 @@ async def list_invoices(
     *,
     state: Optional[str] = None,
     year: Optional[int] = None,
+    direction: str = DEFAULT_DIRECTION,
     payee_id: Optional[uuid.UUID] = None,
     q: Optional[str] = None,
     limit: int = 100,
@@ -292,7 +308,7 @@ async def list_invoices(
     invoices this becomes a materialized balance column — and the single
     definition here is what makes that change safe.
     """
-    query = _base_query().where(
+    query = _base_query(direction).where(
         Invoice.workspace_id == workspace_id,
         Invoice.document_type == "invoice",
     )
@@ -341,7 +357,10 @@ FACET_STATES: dict[str, tuple[str, ...]] = {
 
 
 async def facets(
-    session: AsyncSession, workspace_id: uuid.UUID, year: Optional[int] = None
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    year: Optional[int] = None,
+    direction: str = DEFAULT_DIRECTION,
 ) -> dict[str, Any]:
     """What the filter bar needs: which years exist, and how many in each state.
 
@@ -355,6 +374,7 @@ async def facets(
         .where(
             Invoice.workspace_id == workspace_id,
             Invoice.document_type == "invoice",
+            Invoice.direction == direction,
         )
         .distinct()
     )
@@ -362,7 +382,7 @@ async def facets(
 
     result = await session.execute(
         _apply_year(
-            _base_query().where(
+            _base_query(direction).where(
                 Invoice.workspace_id == workspace_id,
                 Invoice.document_type == "invoice",
             ),
@@ -380,7 +400,10 @@ async def facets(
 
 
 async def aging_summary(
-    session: AsyncSession, workspace_id: uuid.UUID, today: Optional[_date] = None
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    today: Optional[_date] = None,
+    direction: str = DEFAULT_DIRECTION,
 ) -> dict[str, Any]:
     """A receber · vencidas · recebido no mês · próximos vencimentos.
 
@@ -390,7 +413,7 @@ async def aging_summary(
     """
     reference = today or datetime.now(timezone.utc).date()
     result = await session.execute(
-        _base_query().where(
+        _base_query(direction).where(
             Invoice.workspace_id == workspace_id,
             Invoice.document_type == "invoice",
             Invoice.status == "open",
@@ -544,6 +567,7 @@ async def create_invoice(
         subtotal=data.get("subtotal") or ZERO,
         tax_total=data.get("tax_total") or ZERO,
         total=data.get("total") or ZERO,
+        direction=data.get("direction") or DEFAULT_DIRECTION,
         notes=data.get("notes"),
         internal_notes=data.get("internal_notes"),
         custom_fields=data.get("custom_fields"),
@@ -801,9 +825,11 @@ async def allocate(
     if available <= ZERO:
         raise InvoiceError("already_settled", "This invoice is already fully settled")
 
-    # An inflow is a credit; its amount is positive. Defaulting to the
-    # smaller of "what is left" and "what arrived" is what makes the
-    # common case — one payment, one invoice — a single click.
+    # Magnitude, not sign: a receivable is settled by money coming in and
+    # a payable by money going out, and the allocation records how much of
+    # that movement this document accounts for either way. Defaulting to
+    # the smaller of "what is left" and "what moved" is what makes the
+    # common case — one payment, one document — a single click.
     incoming = abs(transaction.amount)
     proposed = Decimal(amount) if amount is not None else min(available, incoming)
     if proposed <= ZERO:

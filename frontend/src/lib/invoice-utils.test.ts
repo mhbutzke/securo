@@ -21,6 +21,7 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     payee_id: null,
     payee: null,
     document_type: 'invoice',
+    direction: 'receivable',
     origin: 'local',
     number: 7,
     series: null,

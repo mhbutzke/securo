@@ -1026,6 +1026,11 @@ export interface ReportResponse {
  *  endpoint, because a status that changed always has a reason. */
 export type InvoiceStatus = 'draft' | 'open' | 'void' | 'uncollectible'
 
+/** Which side of the ledger a document sits on. Everything the UI writes
+ *  today is a receivable; `payable` exists so supplier documents have
+ *  somewhere to land without a migration when that path arrives. */
+export type InvoiceDirection = 'receivable' | 'payable'
+
 /** What the UI renders. The three terminal decisions above, plus the four
  *  facts the server computes from allocations and the due date. Nothing
  *  here is stored in a column. */
@@ -1075,6 +1080,7 @@ export interface Invoice {
   payee_id: string | null
   payee: { id: string; name: string } | null
   document_type: string
+  direction: InvoiceDirection
   origin: string
   number: number | null
   series: string | null

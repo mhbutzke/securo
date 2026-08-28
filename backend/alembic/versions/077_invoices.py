@@ -57,6 +57,11 @@ def upgrade() -> None:
         # it later means backfilling every row in every self-hosted
         # install for a feature they were not using.
         sa.Column("document_type", sa.String(length=20), nullable=False, server_default="invoice"),
+        # Which side of the ledger. Everything issued today is a
+        # receivable; `payable` is here because supplier invoices are a
+        # stated direction for this module, and adding the column later
+        # means rewriting every row in every self-hosted install.
+        sa.Column("direction", sa.String(length=20), nullable=False, server_default="receivable"),
         sa.Column("corrects_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("origin", sa.String(length=20), nullable=False, server_default="local"),
         sa.Column("external_source", sa.String(length=50), nullable=True),
@@ -92,6 +97,9 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "document_type IN ('invoice', 'credit_note')", name="ck_invoices_document_type"
         ),
+        sa.CheckConstraint(
+            "direction IN ('receivable', 'payable')", name="ck_invoices_direction"
+        ),
         sa.CheckConstraint("origin IN ('local', 'imported')", name="ck_invoices_origin"),
         # A draft has no number; anything past draft has one. In the
         # database because the alternative is trusting every future code
@@ -114,10 +122,12 @@ def upgrade() -> None:
     op.create_index("ix_invoices_workspace_id", "invoices", ["workspace_id"])
     op.create_index("ix_invoices_payee_id", "invoices", ["payee_id"])
     op.create_index("ix_invoices_status", "invoices", ["status"])
-    # The receivables read path: one workspace, open invoices, by due
-    # date. Every list and every aging bucket starts here.
+    # The read path: one workspace, one side of the ledger, open rows, by
+    # due date. Every list and every aging bucket starts here.
     op.create_index(
-        "ix_invoices_workspace_status_due", "invoices", ["workspace_id", "status", "due_date"]
+        "ix_invoices_workspace_direction_status_due",
+        "invoices",
+        ["workspace_id", "direction", "status", "due_date"],
     )
 
     op.create_table(

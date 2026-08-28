@@ -17,6 +17,11 @@ InvoiceState = Literal[
     "draft", "open", "partial", "paid", "overdue", "void", "uncollectible"
 ]
 
+#: Which side of the ledger. Everything the UI writes today is a
+#: receivable; `payable` is accepted so supplier documents have somewhere
+#: to land without a migration when that path arrives.
+InvoiceDirection = Literal["receivable", "payable"]
+
 InvoicePreset = Literal["tracking", "document"]
 TaxFieldsMode = Literal["hidden", "optional", "required"]
 
@@ -66,6 +71,7 @@ class InvoiceAllocationRead(BaseModel):
 
 
 class InvoiceCreate(BaseModel):
+    direction: Optional[InvoiceDirection] = None
     payee_id: Optional[uuid.UUID] = None
     issue_date: Optional[_Date] = None
     # Optional: falls back to the workspace's default payment terms, so
@@ -111,6 +117,7 @@ class InvoiceRead(BaseModel):
     payee_id: Optional[uuid.UUID]
     payee: Optional[InvoicePayee] = None
     document_type: str
+    direction: InvoiceDirection
     origin: str
     number: Optional[int]
     series: Optional[str]

@@ -21,6 +21,7 @@ from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import (
     AllocationCreate,
     InvoiceCreate,
+    InvoiceDirection,
     InvoiceFacets,
     InvoiceRead,
     InvoiceSettingsRead,
@@ -39,6 +40,12 @@ router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 read_ctx = require_module(ModuleId.INVOICES)
 write_ctx = require_module_write(ModuleId.INVOICES)
+
+#: Every list, count and total is about one side of the ledger. The
+#: parameter defaults rather than being required so today's callers keep
+#: working unchanged, and so a caller that forgets it gets receivables —
+#: the side that exists — instead of both mixed together.
+DirectionParam = Query("receivable", description="Which side of the ledger to read")
 
 
 def _serialize(invoice, today: Optional[_date] = None) -> InvoiceRead:
@@ -98,6 +105,7 @@ async def write_settings(
 @router.get("/facets", response_model=InvoiceFacets)
 async def read_facets(
     year: Optional[int] = Query(None, ge=1970, le=2200),
+    direction: InvoiceDirection = DirectionParam,
     ctx: WorkspaceContext = Depends(read_ctx),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -106,15 +114,18 @@ async def read_facets(
     One call for the whole filter bar. The counts use the same derived
     state the list does, so a chip reading 3 opens a list of exactly 3.
     """
-    return await invoice_service.facets(session, ctx.workspace.id, year)
+    return await invoice_service.facets(session, ctx.workspace.id, year, direction)
 
 
 @router.get("/summary", response_model=InvoiceSummary)
 async def read_summary(
+    direction: InvoiceDirection = DirectionParam,
     ctx: WorkspaceContext = Depends(read_ctx),
     session: AsyncSession = Depends(get_async_session),
 ):
-    data = await invoice_service.aging_summary(session, ctx.workspace.id)
+    data = await invoice_service.aging_summary(
+        session, ctx.workspace.id, direction=direction
+    )
     data["upcoming"] = [_serialize(inv) for inv in data["upcoming"]]
     return data
 
@@ -179,6 +190,7 @@ async def list_invoices(
     # unpaid invoice from two years ago is still owed today, so
     # "outstanding" has no year.
     year: Optional[int] = Query(None, ge=1970, le=2200, description="Filter by issue year"),
+    direction: InvoiceDirection = DirectionParam,
     payee_id: Optional[uuid.UUID] = Query(None),
     q: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
@@ -187,8 +199,8 @@ async def list_invoices(
     session: AsyncSession = Depends(get_async_session),
 ):
     invoices = await invoice_service.list_invoices(
-        session, ctx.workspace.id, state=state, year=year, payee_id=payee_id,
-        q=q, limit=limit, offset=offset,
+        session, ctx.workspace.id, state=state, year=year, direction=direction,
+        payee_id=payee_id, q=q, limit=limit, offset=offset,
     )
     return [_serialize(inv) for inv in invoices]
 

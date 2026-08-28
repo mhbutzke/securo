@@ -67,6 +67,22 @@ INVOICE_STATUSES = ("draft", "open", "void", "uncollectible")
 #: backfilling every row in every self-hosted install.
 INVOICE_DOCUMENT_TYPES = ("invoice", "credit_note")
 
+#: Which side of the ledger a document sits on.
+#:
+#:   receivable — we issued it; the money comes in
+#:   payable    — we received it; the money goes out
+#:
+#: Kept **separate from `document_type`** rather than folded into a single
+#: four-value enum (out_invoice / out_refund / in_invoice / in_refund, as
+#: some accounting systems do). They answer different questions — which
+#: direction the money moves, and what kind of document this is — and
+#: crossing them means every new document type doubles the enum.
+#:
+#: Everything issued today is `receivable`. `payable` exists now because
+#: supplier invoices are a stated direction for this module, and a column
+#: added later is a migration over every row in every self-hosted install.
+INVOICE_DIRECTIONS = ("receivable", "payable")
+
 #: Who authored the document. `imported` rows are reconstructed from an
 #: external system (Stripe, Asaas, a CSV): that system owns the document,
 #: and Securo owns the cash that settled it.
@@ -107,7 +123,15 @@ class Invoice(Base):
             "external_id",
             name="uq_invoices_workspace_external",
         ),
-        Index("ix_invoices_workspace_status_due", "workspace_id", "status", "due_date"),
+        # Leads with direction because every list starts by choosing a
+        # side of the ledger; status and due date narrow within it.
+        Index(
+            "ix_invoices_workspace_direction_status_due",
+            "workspace_id",
+            "direction",
+            "status",
+            "due_date",
+        ),
         CheckConstraint(
             "status IN ('draft', 'open', 'void', 'uncollectible')",
             name="ck_invoices_status",
@@ -115,6 +139,9 @@ class Invoice(Base):
         CheckConstraint(
             "document_type IN ('invoice', 'credit_note')",
             name="ck_invoices_document_type",
+        ),
+        CheckConstraint(
+            "direction IN ('receivable', 'payable')", name="ck_invoices_direction"
         ),
         CheckConstraint("origin IN ('local', 'imported')", name="ck_invoices_origin"),
         # A draft has no number; anything past draft has one. Written as a
@@ -147,6 +174,9 @@ class Invoice(Base):
     )
 
     document_type: Mapped[str] = mapped_column(String(20), default="invoice", server_default="invoice")
+    direction: Mapped[str] = mapped_column(
+        String(20), default="receivable", server_default="receivable"
+    )
     # Lineage for a credit note: which document it corrects. Provenance
     # only — applying a credit is an allocation, and this column never
     # takes part in the arithmetic.
