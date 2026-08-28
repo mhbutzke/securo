@@ -39,6 +39,7 @@ import {
 import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, StateBadge, TH } from '@/components/invoice-ui'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
+import { InvoiceLogoField } from '@/components/invoice-logo-field'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -785,13 +786,12 @@ function InvoiceSettingsDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="settings-logo">{t('invoices.settings.logoUrl')}</Label>
-            <Input
-              id="settings-logo"
-              data-testid="invoice-logo-input"
-              value={String(value('logo_url') ?? '')}
-              onChange={(e) => setDraft({ ...draft, logo_url: e.target.value })}
-              placeholder="https://…"
+            <Label>{t('invoices.settings.logo')}</Label>
+            <InvoiceLogoField
+              logoId={settings?.logo_id ?? null}
+              onChanged={() => {
+                void queryClient.invalidateQueries({ queryKey: ['invoice-settings'] })
+              }}
             />
             {/* The freeze rule, said out loud: people expect a logo change
                 to be retroactive, and it deliberately is not. */}

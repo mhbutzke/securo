@@ -239,7 +239,7 @@ class InvoiceDocument:
     lines: list[DocumentLine]
     labels: dict[str, str]
     accent_color: str
-    logo_url: Optional[str]
+    logo_id: Optional[str]
     payment_details: Optional[str]
     notes: Optional[str]
     footer_note: Optional[str]
@@ -427,7 +427,18 @@ async def build_document(
             if payable
             else (issued_or_live("accent_color", settings.accent_color) or DEFAULT_ACCENT)
         ),
-        logo_url=None if payable else issued_or_live("logo_url", settings.logo_url),
+        # The id, not a URL: the two surfaces that draw this reach the
+        # file by different routes — one authenticated, one behind a
+        # share token — and neither should be hard-coded here.
+        logo_id=(
+            None
+            if payable
+            else (
+                str(raw_logo)
+                if (raw_logo := issued_or_live("logo_id", settings.logo_id))
+                else None
+            )
+        ),
         payment_details=(
             None if payable else issued_or_live("payment_details", settings.payment_details)
         ),
@@ -483,7 +494,7 @@ def document_payload(document: InvoiceDocument) -> dict[str, Any]:
         ],
         "labels": document.labels,
         "accent_color": document.accent_color,
-        "logo_url": document.logo_url,
+        "logo_id": document.logo_id,
         "payment_details": document.payment_details,
         "notes": document.notes,
         "footer_note": document.footer_note,

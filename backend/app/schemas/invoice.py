@@ -264,7 +264,7 @@ class InvoiceSettingsRead(BaseModel):
     number_prefix: Optional[str]
     series: Optional[str]
     next_number: int
-    logo_url: Optional[str]
+    logo_id: Optional[uuid.UUID] = None
     issuer_display_name: Optional[str]
     footer_note: Optional[str]
     payment_details: Optional[str]
@@ -284,7 +284,6 @@ class InvoiceSettingsUpdate(BaseModel):
     #: people do, and it must not read as "leave it alone".
     number_prefix: Optional[str] = Field(default=None, max_length=20)
     series: Optional[str] = Field(default=None, max_length=20)
-    logo_url: Optional[str] = Field(default=None, max_length=1000)
     issuer_display_name: Optional[str] = Field(default=None, max_length=255)
     footer_note: Optional[str] = None
     #: Free text on purpose — a Pix key, an IBAN and a routing number have

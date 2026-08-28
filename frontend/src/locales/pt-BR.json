@@ -235,7 +235,6 @@
       "numberPrefix": "Prefixo da numeração",
       "paymentTerms": "Prazo de pagamento (dias)",
       "issuerName": "Nome do seu negócio",
-      "logoUrl": "URL do logo",
       "logoHint": "Vale para as cobranças emitidas de agora em diante. As já emitidas mantêm o logo que levaram.",
       "footerNote": "Rodapé",
       "saved": "Configurações salvas",
@@ -250,7 +249,12 @@
       "labelsHint": "Renomeie como o documento chama cada campo.",
       "saveIssuer": "Salvar dados",
       "groupBehaviour": "Como a cobrança funciona",
-      "groupDocument": "Como o documento aparece"
+      "groupDocument": "Como o documento aparece",
+      "logo": "Logo",
+      "logoUpload": "Enviar",
+      "logoReplace": "Substituir",
+      "logoRemove": "Remover logo",
+      "logoFailed": "Não foi possível usar essa imagem."
     },
     "errors": {
       "generic": "Algo deu errado.",

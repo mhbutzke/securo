@@ -120,7 +120,7 @@ async def get_settings(session: AsyncSession, workspace_id: uuid.UUID) -> Invoic
 #: Fields a caller may blank out deliberately. Everything else ignores a
 #: null, so a partial update never wipes what it did not mention.
 _NULLABLE_SETTINGS = (
-    "logo_url", "issuer_display_name", "footer_note", "series", "number_prefix",
+    "issuer_display_name", "footer_note", "series", "number_prefix",
     "payment_details", "accent_color",
 )
 
@@ -727,7 +727,7 @@ def _build_snapshot(
             "display_name": settings.issuer_display_name,
             "legal_name": workspace.legal_name if workspace else None,
             "address": workspace.address if workspace else None,
-            "logo_url": settings.logo_url,
+            "logo_id": str(settings.logo_id) if settings.logo_id else None,
             "footer_note": settings.footer_note,
             "payment_details": settings.payment_details,
             "accent_color": settings.accent_color,

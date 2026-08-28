@@ -1811,6 +1811,24 @@ export const invoices = {
   unshare: async (id: string): Promise<void> => {
     await api.delete(`/invoices/${id}/share`)
   },
+  /** The workspace's mark. Uploaded rather than linked, so a rendered
+   *  document never fetches an image from somebody else's host. */
+  uploadLogo: async (file: File): Promise<InvoiceSettings> => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post('/invoices/settings/logo', form)
+    return data
+  },
+  removeLogo: async (): Promise<InvoiceSettings> => {
+    const { data } = await api.delete('/invoices/settings/logo')
+    return data
+  },
+  /** By id, not "the current one": a document issued under an older mark
+   *  froze that id, and asking for the current logo would repaint it. */
+  logoUrl: async (logoId: string): Promise<string> => {
+    const { data } = await api.get(`/invoices/logo/${logoId}`, { responseType: 'blob' })
+    return URL.createObjectURL(data)
+  },
   /** The paper gathered under an invoice: the bill, the fiscal document,
    *  a receipt, the contract behind it. */
   attachments: {

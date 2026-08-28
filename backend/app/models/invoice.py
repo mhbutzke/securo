@@ -414,9 +414,20 @@ class InvoiceSettings(Base):
     series: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     next_number: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
-    # Presentation. Read by the web view now and by the PDF renderer when
-    # it lands, so nothing built here is thrown away.
-    logo_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    # Presentation.
+    #
+    # The logo is a file this workspace uploaded, not a URL pointing
+    # somewhere else. A remote address would fetch the mark from a third
+    # party every time a document is drawn — on a self-hosted install
+    # that is a request out of the building for something the user
+    # already owns, and it breaks the day that host does.
+    #
+    # Stored as an id rather than a path: the storage key is derived from
+    # it, every upload mints a new one, and the old file is left in place
+    # because an invoice issued last month froze *that* id in its
+    # snapshot. Replacing a logo must not repaint a document a client
+    # already holds.
+    logo_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     issuer_display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     footer_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Free text, deliberately. A Brazilian writes a Pix key, a German an

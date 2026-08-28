@@ -235,7 +235,6 @@
       "numberPrefix": "Number prefix",
       "paymentTerms": "Payment terms (days)",
       "issuerName": "Your business name",
-      "logoUrl": "Logo URL",
       "logoHint": "Applies to invoices issued from now on. Documents already issued keep the logo they carried.",
       "footerNote": "Footer note",
       "saved": "Settings saved",
@@ -250,7 +249,12 @@
       "labelsHint": "Rename what the document calls each field.",
       "saveIssuer": "Save details",
       "groupBehaviour": "How invoicing behaves",
-      "groupDocument": "How the document looks"
+      "groupDocument": "How the document looks",
+      "logo": "Logo",
+      "logoUpload": "Prześlij",
+      "logoReplace": "Zamień",
+      "logoRemove": "Usuń logo",
+      "logoFailed": "Nie udało się użyć tego obrazu."
     },
     "errors": {
       "generic": "Something went wrong.",

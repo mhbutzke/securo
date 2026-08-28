@@ -505,6 +505,21 @@ async def test_summary_buckets_and_excludes_drafts(client: AsyncClient, biz_head
     assert len(summary["upcoming"]) == 1
 
 
+async def _upload_logo(client, headers):
+    """A one-pixel PNG is enough: what is under test is the id it gets."""
+    import io as _io
+
+    from PIL import Image as _Image
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (8, 8), (79, 70, 229)).save(buf, format="PNG")
+    return await client.post(
+        "/api/invoices/settings/logo",
+        headers=headers,
+        files={"file": ("logo.png", buf.getvalue(), "image/png")},
+    )
+
+
 @pytest.mark.asyncio
 async def test_settings_carry_presentation_and_survive_issuance(
     client: AsyncClient, biz_headers
@@ -515,23 +530,23 @@ async def test_settings_carry_presentation_and_survive_issuance(
         "/api/invoices/settings",
         headers=biz_headers,
         json={
-            "logo_url": "https://example.com/logo.png",
             "issuer_display_name": "Alpha Consultoria ME",
             "footer_note": "Obrigado!",
             "number_prefix": "FAT-",
             "template": {"labels": {"quantity": "Horas"}, "custom_fields": [{"key": "po", "label": "PO"}]},
         },
     )
+    first_logo = (await _upload_logo(client, biz_headers)).json()["logo_id"]
+
     invoice = await _create(client, biz_headers, custom_fields={"po": "PO-4471"})
-    assert invoice["snapshot"]["issuer"]["logo_url"] == "https://example.com/logo.png"
+    assert invoice["snapshot"]["issuer"]["logo_id"] == first_logo
     assert invoice["snapshot"]["template"]["labels"]["quantity"] == "Horas"
     assert invoice["custom_fields"]["po"] == "PO-4471"
 
-    await client.patch(
-        "/api/invoices/settings", headers=biz_headers, json={"logo_url": "https://example.com/new.png"}
-    )
+    second = (await _upload_logo(client, biz_headers)).json()["logo_id"]
+    assert second != first_logo
     after = await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
-    assert after.json()["snapshot"]["issuer"]["logo_url"] == "https://example.com/logo.png"
+    assert after.json()["snapshot"]["issuer"]["logo_id"] == first_logo
 
 
 @pytest.mark.asyncio
@@ -1159,7 +1174,7 @@ async def test_an_import_does_not_get_our_snapshot(client: AsyncClient, biz_head
     await client.patch(
         "/api/invoices/settings",
         headers=biz_headers,
-        json={"issuer_display_name": "Alpha ME", "logo_url": "https://example.com/l.png"},
+        json={"issuer_display_name": "Alpha ME"},
     )
     imported = await _create(
         client, biz_headers, total="500.00", origin="imported",

@@ -11,7 +11,7 @@ import uuid
 from datetime import date as _date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -34,6 +34,7 @@ from app.schemas.invoice import (
 )
 from app.services import (
     invoice_attachment_service,
+    invoice_logo_service,
     invoice_document,
     invoice_pdf,
     invoice_service,
@@ -393,6 +394,12 @@ async def read_document(
     invoice = await _load(session, invoice_id, ctx.workspace.id)
     document = await _document(session, invoice, ctx.workspace)
     payload = invoice_document.document_payload(document)
+    # The URL is built by whoever serves the document: this surface is
+    # behind a session, the share page is behind a token, and the
+    # resolver knows about neither.
+    payload["logo_url"] = (
+        f"/api/invoices/logo/{payload['logo_id']}" if payload.get("logo_id") else None
+    )
 
     # If a real document was filed, say so. The resolved page is still
     # returned — it is the summary the screen shows around the file — but
@@ -408,6 +415,65 @@ async def read_document(
         else None
     )
     return payload
+
+
+@router.post("/settings/logo", response_model=InvoiceSettingsRead)
+async def upload_logo(
+    file: UploadFile,
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Replace the workspace's mark with an uploaded image."""
+    settings = await invoice_service.get_settings(session, ctx.workspace.id)
+    try:
+        await invoice_logo_service.store(
+            session,
+            settings,
+            ctx.workspace.id,
+            await file.read(),
+            file.content_type or "application/octet-stream",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+@router.delete("/settings/logo", response_model=InvoiceSettingsRead)
+async def remove_logo(
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    settings = await invoice_service.get_settings(session, ctx.workspace.id)
+    await invoice_logo_service.clear(session, settings)
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+@router.get("/logo/{logo_id}")
+async def read_logo(
+    logo_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(read_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """One logo by id.
+
+    By id rather than "the current one" because a document issued under
+    an older mark froze that id, and asking for the current logo would
+    repaint it.
+    """
+    data = await invoice_logo_service.read(ctx.workspace.id, logo_id)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    return Response(
+        content=data,
+        media_type="image/png",
+        # Immutable: an id names one file forever, so a client that has
+        # it never needs to ask again.
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/{invoice_id}/pdf")
@@ -448,7 +514,15 @@ async def download_pdf(
         )
 
     document = await _document(session, invoice, ctx.workspace)
-    pdf = invoice_pdf.render_pdf(document)
+    # Loaded here rather than inside the renderer, which does no I/O on
+    # purpose. Until now nothing passed it at all, so a workspace with a
+    # logo saw it on screen and got a file without one.
+    logo_bytes = (
+        await invoice_logo_service.read(ctx.workspace.id, uuid.UUID(document.logo_id))
+        if document.logo_id
+        else None
+    )
+    pdf = invoice_pdf.render_pdf(document, logo_bytes)
     filename = f"{document.number or 'draft'}.pdf".replace("/", "-")
     return Response(
         content=pdf,

@@ -310,7 +310,7 @@ class TestPdf:
             tax_total=Decimal("0"), total=Decimal("10"), amount_paid=Decimal("0"),
             balance=Decimal("10"), issuer=DocumentParty(name="A"),
             client=DocumentParty(name="B"), lines=[], labels=dict(DEFAULT_LABELS),
-            accent_color="#000000", logo_url=None, payment_details=None, notes=None,
+            accent_color="#000000", logo_id=None, payment_details=None, notes=None,
             footer_note=None, custom_fields=[], has_line_items=False,
         )
         pdf = invoice_pdf.render_pdf(document, logo_bytes=b"not an image")
@@ -543,7 +543,7 @@ def _doc(n_lines: int, footer_note: str = "Alpha ME"):
         ],
         labels=dict(DEFAULT_LABELS),
         accent_color="#4f46e5",
-        logo_url=None,
+        logo_id=None,
         payment_details="Pix: alpha@exemplo.com",
         notes="Obrigado.",
         footer_note=footer_note,
@@ -773,12 +773,14 @@ async def test_our_identity_stays_off_a_supplier_document(client: AsyncClient, b
         "/api/invoices/settings",
         headers=biz_headers,
         json={
-            "logo_url": "https://example.com/our-logo.png",
             "payment_details": "Banco 001 · Ag 1234 · CC 56789-0",
             "footer_note": "Obrigado pela preferencia!",
             "accent_color": "#FF0000",
         },
     )
+    # The logo arrives as a file now, on its own route.
+    logo_id = (await _put_logo(client, biz_headers)).json()["logo_id"]
+
     bill = await make_invoice(
         client, biz_headers, direction="payable", origin="imported",
         external_source="erp", external_id="FAT-1",
@@ -786,7 +788,7 @@ async def test_our_identity_stays_off_a_supplier_document(client: AsyncClient, b
     doc = (
         await client.get(f"/api/invoices/{bill['id']}/document", headers=biz_headers)
     ).json()
-    assert doc["logo_url"] is None
+    assert doc["logo_id"] is None
     assert doc["payment_details"] is None
     assert doc["footer_note"] is None
     assert doc["accent_color"] != "#FF0000"
@@ -796,7 +798,140 @@ async def test_our_identity_stays_off_a_supplier_document(client: AsyncClient, b
     doc = (
         await client.get(f"/api/invoices/{ours['id']}/document", headers=biz_headers)
     ).json()
-    assert doc["logo_url"] == "https://example.com/our-logo.png"
+    assert doc["logo_id"] == logo_id
     assert doc["payment_details"] == "Banco 001 \u00b7 Ag 1234 \u00b7 CC 56789-0"
     assert doc["footer_note"] == "Obrigado pela preferencia!"
     assert doc["accent_color"] == "#FF0000"
+
+
+# ---------------------------------------------------------------------------
+# The logo is a file this workspace owns
+# ---------------------------------------------------------------------------
+def _png(width: int = 40, height: int = 20, colour: tuple = (79, 70, 229)) -> bytes:
+    import io as _io
+
+    from PIL import Image as _Image
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (width, height), colour).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def _put_logo(client, headers, data=None, content_type="image/png", name="logo.png"):
+    return await client.post(
+        "/api/invoices/settings/logo",
+        headers=headers,
+        files={"file": (name, data if data is not None else _png(), content_type)},
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_uploaded_logo_reaches_the_pdf(client: AsyncClient, biz_headers):
+    """It never did: `render_pdf` took logo bytes and no caller passed
+    any, so a workspace saw its mark on screen and got a file without."""
+    resp = await _put_logo(client, biz_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["logo_id"]
+
+    invoice = await make_invoice(client, biz_headers)
+    pdf = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    import io as _io
+
+    import pypdf as _pypdf
+
+    reader = _pypdf.PdfReader(_io.BytesIO(pdf.content))
+    assert len(list(reader.pages[0].images)) == 1
+
+
+@pytest.mark.asyncio
+async def test_replacing_the_logo_leaves_issued_documents_alone(
+    client: AsyncClient, biz_headers
+):
+    """The freeze rule, applied to a file. An invoice a client is holding
+    does not change its letterhead because the issuer rebranded."""
+    first = (await _put_logo(client, biz_headers)).json()["logo_id"]
+    invoice = await make_invoice(client, biz_headers)
+
+    second = (await _put_logo(client, biz_headers, data=_png(colour=(200, 30, 30)))).json()[
+        "logo_id"
+    ]
+    assert second != first
+
+    doc = await client.get(f"/api/invoices/{invoice['id']}/document", headers=biz_headers)
+    assert doc.json()["logo_url"] == f"/api/invoices/logo/{first}"
+
+    # And the old file is still there to serve, because the document
+    # still points at it.
+    served = await client.get(f"/api/invoices/logo/{first}", headers=biz_headers)
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_whatever_arrives_is_stored_as_a_bounded_png(
+    client: AsyncClient, biz_headers
+):
+    """Re-encoding fixes the content type the route answers with, bounds
+    the size every PDF carries, and drops the metadata a photo brings."""
+    import io as _io
+
+    from PIL import Image as _Image
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (3000, 1200), (10, 200, 90)).save(buf, format="JPEG")
+    resp = await _put_logo(
+        client, biz_headers, data=buf.getvalue(), content_type="image/jpeg", name="mark.jpg"
+    )
+    logo_id = resp.json()["logo_id"]
+
+    served = await client.get(f"/api/invoices/logo/{logo_id}", headers=biz_headers)
+    assert served.headers["content-type"] == "image/png"
+    stored = _Image.open(_io.BytesIO(served.content))
+    assert stored.format == "PNG"
+    assert max(stored.size) <= 600
+
+
+@pytest.mark.asyncio
+async def test_a_file_that_is_not_an_image_is_refused(client: AsyncClient, biz_headers):
+    resp = await _put_logo(
+        client, biz_headers, data=b"%PDF-1.4 not an image", content_type="application/pdf",
+        name="nope.pdf",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_removing_the_logo_leaves_documents_that_used_it(
+    client: AsyncClient, biz_headers
+):
+    logo_id = (await _put_logo(client, biz_headers)).json()["logo_id"]
+    invoice = await make_invoice(client, biz_headers)
+
+    cleared = await client.delete("/api/invoices/settings/logo", headers=biz_headers)
+    assert cleared.json()["logo_id"] is None
+
+    # The invoice issued under it still draws it.
+    doc = await client.get(f"/api/invoices/{invoice['id']}/document", headers=biz_headers)
+    assert doc.json()["logo_url"] == f"/api/invoices/logo/{logo_id}"
+
+
+@pytest.mark.asyncio
+async def test_the_shared_page_serves_the_logo_through_its_token(
+    client: AsyncClient, biz_headers
+):
+    """The client opening a link has no session, so the mark has to be
+    reachable by the token and by nothing else."""
+    await _put_logo(client, biz_headers)
+    invoice = await make_invoice(client, biz_headers)
+    token = (
+        await client.post(f"/api/invoices/{invoice['id']}/share", headers=biz_headers)
+    ).json()["token"]
+
+    shared = await client.get(f"/api/public/invoices/{token}")
+    assert shared.json()["logo_url"] == f"/api/public/invoices/{token}/logo"
+    # The workspace's internal handle for the file is not in the response.
+    assert "logo_id" not in shared.json()
+
+    served = await client.get(f"/api/public/invoices/{token}/logo")
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/png"

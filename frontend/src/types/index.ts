@@ -1192,7 +1192,9 @@ export interface InvoiceSettings {
   number_prefix: string | null
   series: string | null
   next_number: number
-  logo_url: string | null
+  /** The uploaded mark, addressed by an id that never changes for a
+   *  given file. Null when none was uploaded. */
+  logo_id: string | null
   issuer_display_name: string | null
   footer_note: string | null
   /** Free text: a Pix key, an IBAN, a routing number. Shown on the
