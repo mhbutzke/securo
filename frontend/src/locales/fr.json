@@ -283,7 +283,7 @@
     },
     "tab": {
       "details": "Details",
-      "document": "Document"
+      "document": "Documents"
     },
     "shareCopied": "Link copied",
     "shareRevoked": "Link revoked",
@@ -336,13 +336,10 @@
       "title": "Documents",
       "add": "Ajouter",
       "empty": "Aucun document classé pour l'instant. La facture, le document fiscal et le reçu ont leur place ici.",
-      "primary": "Le document",
       "primaryHint": "Télécharger cette facture remet ce fichier",
       "makePrimary": "Utiliser comme le document",
       "remove": "Supprimer le document",
       "uploadFailed": "Ce fichier n'a pas pu être ajouté.",
-      "original": "Document original",
-      "originalHint": "Voici {{filename}}, tel qu'il a été reçu. Rien n'a été redessiné ici.",
       "openOriginal": "Ouvrir l'original",
       "cannotPreview": "Ce fichier ne peut pas être prévisualisé ici. Ouvrez-le pour le consulter.",
       "kind": {

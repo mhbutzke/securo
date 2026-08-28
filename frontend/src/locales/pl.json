@@ -283,7 +283,7 @@
     },
     "tab": {
       "details": "Details",
-      "document": "Document"
+      "document": "Dokumenty"
     },
     "shareCopied": "Link copied",
     "shareRevoked": "Link revoked",
@@ -336,13 +336,10 @@
       "title": "Dokumenty",
       "add": "Dodaj",
       "empty": "Nie dodano jeszcze żadnych dokumentów. Faktura, dokument fiskalny i potwierdzenie należą tutaj.",
-      "primary": "Dokument",
       "primaryHint": "Pobranie tej faktury zwraca ten plik",
       "makePrimary": "Ustaw jako dokument",
       "remove": "Usuń dokument",
       "uploadFailed": "Nie udało się dodać tego pliku.",
-      "original": "Dokument oryginalny",
-      "originalHint": "To jest {{filename}}, w postaci w jakiej został otrzymany. Nic tutaj nie zostało przerysowane.",
       "openOriginal": "Otwórz oryginał",
       "cannotPreview": "Tego pliku nie można tu wyświetlić. Otwórz go, aby zobaczyć.",
       "kind": {

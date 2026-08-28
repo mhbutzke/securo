@@ -283,7 +283,7 @@
     },
     "tab": {
       "details": "Details",
-      "document": "Document"
+      "document": "Dokumente"
     },
     "shareCopied": "Link copied",
     "shareRevoked": "Link revoked",
@@ -336,13 +336,10 @@
       "title": "Dokumente",
       "add": "Hinzufügen",
       "empty": "Noch keine Dokumente abgelegt. Die Rechnung, das Steuerdokument und der Beleg gehören hierher.",
-      "primary": "Das Dokument",
       "primaryHint": "Beim Herunterladen dieser Rechnung wird diese Datei ausgegeben",
       "makePrimary": "Als das Dokument verwenden",
       "remove": "Dokument entfernen",
       "uploadFailed": "Diese Datei konnte nicht hinzugefügt werden.",
-      "original": "Originaldokument",
-      "originalHint": "Dies ist {{filename}}, so wie es eingegangen ist. Hier wurde nichts neu gezeichnet.",
       "openOriginal": "Original öffnen",
       "cannotPreview": "Diese Datei kann hier nicht angezeigt werden. Zum Ansehen bitte öffnen.",
       "kind": {

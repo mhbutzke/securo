@@ -283,7 +283,7 @@
     },
     "tab": {
       "details": "Details",
-      "document": "Document"
+      "document": "Documenten"
     },
     "shareCopied": "Link copied",
     "shareRevoked": "Link revoked",
@@ -336,13 +336,10 @@
       "title": "Documenten",
       "add": "Toevoegen",
       "empty": "Nog geen documenten opgeslagen. De factuur, het fiscale document en het betaalbewijs horen hier.",
-      "primary": "Het document",
       "primaryHint": "Bij het downloaden van deze factuur wordt dit bestand geleverd",
       "makePrimary": "Gebruiken als het document",
       "remove": "Document verwijderen",
       "uploadFailed": "Dat bestand kon niet worden toegevoegd.",
-      "original": "Origineel document",
-      "originalHint": "Dit is {{filename}}, zoals het is ontvangen. Hier is niets opnieuw getekend.",
       "openOriginal": "Open het origineel",
       "cannotPreview": "Dit bestand kan hier niet worden weergegeven. Open het om het te bekijken.",
       "kind": {

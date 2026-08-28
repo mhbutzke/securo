@@ -191,7 +191,7 @@ export function InvoiceDocumentBrowser({
                   icon={<FileText className="h-4 w-4" />}
                   title={ourPageLabel || t('invoices.documents.ourPage')}
                   subtitle={t('invoices.documents.rendered')}
-                  badge={anyPrimary ? undefined : t('invoices.documents.primary')}
+                  isPrimary={!anyPrimary}
                 />
               </li>
             )}
@@ -217,7 +217,7 @@ export function InvoiceDocumentBrowser({
                     .filter(Boolean)
                     .join(' · ')}
                   reference={attachment.document_number}
-                  badge={attachment.is_primary ? t('invoices.documents.primary') : undefined}
+                  isPrimary={attachment.is_primary}
                   actions={
                     canWrite ? (
                       <>
@@ -290,7 +290,7 @@ function ShelfItem({
   title,
   subtitle,
   reference,
-  badge,
+  isPrimary,
   actions,
 }: {
   active: boolean
@@ -299,9 +299,13 @@ function ShelfItem({
   title: string
   subtitle: string
   reference?: string | null
-  badge?: string
+  /** True on the file the download hands over. Shown as a filled star —
+   *  the same mark the button on the other rows sets, so the flag and the
+   *  way to move it read as one thing rather than two. */
+  isPrimary?: boolean
   actions?: React.ReactNode
 }) {
+  const { t } = useTranslation()
   return (
     <div
       data-testid="invoice-document-row"
@@ -322,13 +326,16 @@ function ShelfItem({
               {reference}
             </span>
           )}
-          {badge && (
-            <span className="inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-primary/20 bg-primary/5 text-primary">
-              {badge}
-            </span>
-          )}
         </span>
       </button>
+      {isPrimary && (
+        <span
+          className="shrink-0 mt-0.5 text-primary"
+          title={t('invoices.documents.primaryHint')}
+        >
+          <Star className="h-3.5 w-3.5 fill-current" />
+        </span>
+      )}
       {actions && (
         <span className="shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           {actions}
@@ -370,10 +377,6 @@ function AttachmentView({
 
   return (
     <div className="mx-auto max-w-[794px]" data-testid="invoice-source-document">
-      <div className="mb-3 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">{t('invoices.documents.original')}</span>{' '}
-        {t('invoices.documents.originalHint', { filename: attachment.filename })}
-      </div>
       <div className="rounded-sm bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_12px_32px_-10px_rgba(0,0,0,0.22)] overflow-hidden">
         {!url ? (
           <div className="h-[560px]" />

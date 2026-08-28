@@ -283,7 +283,7 @@
     },
     "tab": {
       "details": "Details",
-      "document": "Document"
+      "document": "Documents"
     },
     "shareCopied": "Link copied",
     "shareRevoked": "Link revoked",
@@ -336,13 +336,10 @@
       "title": "Documents",
       "add": "Add",
       "empty": "No documents filed yet. The bill, the fiscal document and the receipt all belong here.",
-      "primary": "The document",
       "primaryHint": "Downloading this invoice hands over this file",
       "makePrimary": "Use as the document",
       "remove": "Remove document",
       "uploadFailed": "That file could not be added.",
-      "original": "Original document",
-      "originalHint": "This is {{filename}}, as it was received. Nothing here was redrawn.",
       "openOriginal": "Open the original",
       "cannotPreview": "This file cannot be previewed here. Open it to view it.",
       "kind": {

@@ -283,7 +283,7 @@
     },
     "tab": {
       "details": "Detalhes",
-      "document": "Documento"
+      "document": "Documentos"
     },
     "shareCopied": "Link copiado",
     "shareRevoked": "Link revogado",
@@ -336,13 +336,10 @@
       "title": "Documentos",
       "add": "Adicionar",
       "empty": "Nenhum documento anexado ainda. A fatura, a nota fiscal e o comprovante ficam aqui.",
-      "primary": "O documento",
       "primaryHint": "Ao baixar esta fatura, é este arquivo que é entregue",
       "makePrimary": "Usar como o documento",
       "remove": "Remover documento",
       "uploadFailed": "Não foi possível adicionar esse arquivo.",
-      "original": "Documento original",
-      "originalHint": "Este é o {{filename}}, como foi recebido. Nada aqui foi redesenhado.",
       "openOriginal": "Abrir o original",
       "cannotPreview": "Este arquivo não pode ser visualizado aqui. Abra-o para ver.",
       "kind": {
