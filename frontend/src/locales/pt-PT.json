@@ -248,7 +248,9 @@
       "addressLabel": "Endereço",
       "labels": "Rótulos do documento",
       "labelsHint": "Renomeie como o documento chama cada campo.",
-      "saveIssuer": "Salvar dados"
+      "saveIssuer": "Salvar dados",
+      "groupBehaviour": "Como a cobrança funciona",
+      "groupDocument": "Como o documento aparece"
     },
     "errors": {
       "generic": "Algo deu errado.",
@@ -302,8 +304,8 @@
       "d90_plus": "90+ dias"
     },
     "moreActions": "Mais ações",
-    "allYears": "Todos os anos",
-    "emptyYear": "Nenhuma cobrança emitida em {{year}}.",
+    "allYears": "Todos os exercícios",
+    "emptyYear": "Nenhuma cobrança emitida no {{year}}.",
     "showAllYears": "Ver todos os anos",
     "label": {
       "invoice": "Fatura",
@@ -328,7 +330,8 @@
     "emptyPayable": "Nenhuma conta a pagar ainda. Adicione uma para acompanhar o que você deve.",
     "noSupplier": "Sem fornecedor",
     "receivedDocument": "Documento recebido",
-    "receivedDocumentHint": "Emitido pelo seu fornecedor. Exibido como registrado, não como algo que você enviou."
+    "receivedDocumentHint": "Emitido pelo seu fornecedor. Exibido como registrado, não como algo que você enviou.",
+    "fiscalYear": "Exercício {{year}}"
   },
   "collections": {
     "title": "Coleções",

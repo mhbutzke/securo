@@ -309,19 +309,23 @@ export default function InvoicesPage() {
             owed today. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
+            {/* Same trigger the dashboard uses for its period: a
+                dropdown rather than the dashboard's arrows because only
+                years that have a document are worth stepping to, and
+                arrows would walk into empty ones. */}
             <button
               type="button"
               data-testid="invoice-year-trigger"
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/50"
+              className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
             >
-              <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              {year ?? t('invoices.allYears')}
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <CalendarIcon className="size-3.5 text-muted-foreground" />
+              {year ? t('invoices.fiscalYear', { year }) : t('invoices.allYears')}
+              <ChevronDown className="size-3.5 text-muted-foreground ml-auto" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            className="w-[160px] p-1 bg-card border border-border rounded-xl shadow-md"
+            className="w-[180px] p-1 bg-card border border-border rounded-xl shadow-md"
           >
             <DropdownMenuItem
               onClick={() => setYear(null)}
@@ -339,7 +343,7 @@ export default function InvoicesPage() {
                 data-testid={`invoice-year-${option}`}
                 className="text-sm tabular-nums"
               >
-                {option}
+                {t('invoices.fiscalYear', { year: option })}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -360,7 +364,7 @@ export default function InvoicesPage() {
               {filter !== 'all'
                 ? t('invoices.emptyFiltered')
                 : year
-                  ? t('invoices.emptyYear', { year })
+                  ? t('invoices.emptyYear', { year: t('invoices.fiscalYear', { year }) })
                   : t('invoices.empty')}
             </p>
             {/* When a year emptied the list, the useful next move is to
@@ -699,13 +703,21 @@ function InvoiceSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Capped and scrolled internally, the way every other tall dialog
+          in the app is: a modal taller than the viewport pushes its own
+          close button off screen, which is how someone ends up trapped
+          in it. Header and footer stay put; only the body moves. */}
+      <DialogContent className="sm:max-w-3xl flex flex-col max-h-[calc(100dvh-2rem)]">
         <DialogHeader>
           <DialogTitle>{t('invoices.settings.title')}</DialogTitle>
           <DialogDescription>{t('invoices.settings.description')}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="overflow-y-auto flex-1 -mx-1 px-1 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          <div className="space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('invoices.settings.groupBehaviour')}
+          </p>
           <div className="space-y-1.5">
             <Label>{t('invoices.settings.preset')}</Label>
             <Select
@@ -755,6 +767,13 @@ function InvoiceSettingsDialog({
             </div>
           </div>
 
+          <IssuerSection />
+          </div>
+
+          <div className="space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('invoices.settings.groupDocument')}
+          </p>
           <div className="space-y-1.5">
             <Label htmlFor="settings-issuer">{t('invoices.settings.issuerName')}</Label>
             <Input
@@ -820,12 +839,15 @@ function InvoiceSettingsDialog({
             />
           </div>
 
+          </div>
+
+          <div className="sm:col-span-2">
           <LabelSection
             template={(value('template') as InvoiceTemplate | null) ?? null}
             onChange={(template) => setDraft({ ...draft, template })}
           />
 
-          <IssuerSection />
+          </div>
         </div>
 
         <DialogFooter>

@@ -248,7 +248,9 @@
       "addressLabel": "Address",
       "labels": "Document labels",
       "labelsHint": "Rename what the document calls each field.",
-      "saveIssuer": "Save details"
+      "saveIssuer": "Save details",
+      "groupBehaviour": "How invoicing behaves",
+      "groupDocument": "How the document looks"
     },
     "errors": {
       "generic": "Something went wrong.",
@@ -303,7 +305,7 @@
     },
     "moreActions": "More actions",
     "allYears": "All years",
-    "emptyYear": "No invoices issued in {{year}}.",
+    "emptyYear": "Nothing issued in {{year}}.",
     "showAllYears": "Show all years",
     "label": {
       "invoice": "Invoice",
@@ -328,7 +330,8 @@
     "emptyPayable": "No bills yet. Add one to track what you owe.",
     "noSupplier": "No supplier",
     "receivedDocument": "Received document",
-    "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent."
+    "receivedDocumentHint": "Your supplier issued this. Shown as recorded, not as something you sent.",
+    "fiscalYear": "FY {{year}}"
   },
   "collections": {
     "title": "Collecties",
