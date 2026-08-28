@@ -40,6 +40,7 @@ import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, StateBadge, TH } from '@/components/invoice-ui'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
 import { InvoiceLogoField } from '@/components/invoice-logo-field'
+import { CurrencySelect } from '@/components/currency-select'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -519,7 +520,13 @@ function CreateInvoiceDialog({
 
   const defs = customFieldDefs(settings?.template)
   const { user } = useAuth()
-  const currencyCode = user?.preferences?.currency_display ?? 'USD'
+  // An invoice is denominated in one currency, and it is not necessarily
+  // the one this user reads the app in — a freelancer in São Paulo bills
+  // a client in New York in USD and is paid into a BRL account. The
+  // display preference is only the starting guess.
+  const [currencyCode, setCurrencyCode] = useState(
+    user?.preferences?.currency_display ?? 'USD',
+  )
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -530,6 +537,7 @@ function CreateInvoiceDialog({
         // recomputes the total from them and ignores what was typed.
         ...(lines.length ? { lines } : { total }),
         ...(dueDate ? { due_date: dueDate } : {}),
+        currency: currencyCode,
         notes: notes || null,
         ...(Object.keys(custom).length ? { custom_fields: custom } : {}),
       }),
@@ -546,6 +554,7 @@ function CreateInvoiceDialog({
       setTotal('')
       setDueDate('')
       setNotes('')
+      setCurrencyCode(user?.preferences?.currency_display ?? 'USD')
       setCustom({})
       setLines([])
       onCreated(invoice)
@@ -596,16 +605,24 @@ function CreateInvoiceDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="invoice-total">{t('invoices.field.total')}</Label>
-              <Input
-                id="invoice-total"
-                data-testid="invoice-total-input"
-                inputMode="decimal"
-                value={lines.length ? linesTotal(lines).toFixed(2) : total}
-                onChange={(e) => setTotal(e.target.value)}
-                // Derived once lines exist, so the two can never disagree.
-                disabled={lines.length > 0}
-                placeholder="0.00"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="invoice-total"
+                  data-testid="invoice-total-input"
+                  inputMode="decimal"
+                  value={lines.length ? linesTotal(lines).toFixed(2) : total}
+                  onChange={(e) => setTotal(e.target.value)}
+                  // Derived once lines exist, so the two can never disagree.
+                  disabled={lines.length > 0}
+                  placeholder="0.00"
+                />
+                <CurrencySelect
+                  id="invoice-currency"
+                  value={currencyCode}
+                  onChange={setCurrencyCode}
+                  className="w-28 shrink-0"
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invoice-due">{t('invoices.field.dueDate')}</Label>
