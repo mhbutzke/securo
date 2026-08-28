@@ -735,3 +735,31 @@ class TestIssuerLanguage:
             await client.get(f"/api/invoices/{invoice['id']}/document", headers=headers)
         ).json()
         assert doc["labels"]["invoice"] == "Fatura"
+
+
+@pytest.mark.asyncio
+async def test_an_imported_number_is_rendered_with_the_source_prefix(
+    client: AsyncClient, biz_headers
+):
+    """Our prefix belongs on our paper. A supplier reference of FAT-9931
+    must not come back as INV-9931 because that is what we call ours."""
+    await client.patch(
+        "/api/invoices/settings", headers=biz_headers, json={"number_prefix": "INV-"}
+    )
+    imported = await make_invoice(
+        client, biz_headers, origin="imported",
+        external_source="erp", external_id="FAT-9931", number=9931, series="FAT-",
+    )
+    doc = await client.get(f"/api/invoices/{imported['id']}/document", headers=biz_headers)
+    assert doc.json()["number"] == "FAT-9931"
+
+    bare = await make_invoice(
+        client, biz_headers, origin="imported",
+        external_source="erp", external_id="7", number=7,
+    )
+    doc = await client.get(f"/api/invoices/{bare['id']}/document", headers=biz_headers)
+    assert doc.json()["number"] == "7"
+
+    ours = await make_invoice(client, biz_headers)
+    doc = await client.get(f"/api/invoices/{ours['id']}/document", headers=biz_headers)
+    assert doc.json()["number"] == "INV-1"

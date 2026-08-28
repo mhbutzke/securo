@@ -151,6 +151,16 @@ describe('displayNumber', () => {
     expect(displayNumber(invoice, 'FAT-')).toBe('INV/7')
   })
 
+  it('never puts our prefix on a document we did not write', () => {
+    const imported = makeInvoice({ origin: 'imported', series: 'FAT-', number: 9931, snapshot: null })
+    expect(displayNumber(imported, 'INV-')).toBe('FAT-9931')
+  })
+
+  it('shows an unprefixed import as the bare number the source gave it', () => {
+    const imported = makeInvoice({ origin: 'imported', series: null, number: 9931, snapshot: null })
+    expect(displayNumber(imported, 'INV-')).toBe('9931')
+  })
+
   it('treats a snapshot with no prefix as a real answer, not a gap', () => {
     // The regression this exists for: an invoice issued as "7", before
     // anyone set a prefix, must not start reading as "FAT-7" afterwards.
