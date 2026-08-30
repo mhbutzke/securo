@@ -84,6 +84,14 @@ async def add_movement(session: AsyncSession, workspace_id: uuid.UUID, position_
         tx = await session.scalar(select(Transaction.id).where(Transaction.id == data.transaction_id, Transaction.workspace_id == workspace_id))
         if tx is None:
             raise ValueError("Transaction not found")
+        linked = await session.scalar(
+            select(PositionMovement).where(
+                PositionMovement.transaction_id == data.transaction_id,
+                PositionMovement.reversed_at.is_(None),
+            )
+        )
+        if linked is not None and linked.position_id != position_id:
+            raise ValueError("Transaction is already linked to another position")
     existing = await session.scalar(select(PositionMovement).where(PositionMovement.position_id == position_id, PositionMovement.idempotency_key == data.idempotency_key))
     if existing is not None:
         return existing
