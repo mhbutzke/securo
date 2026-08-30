@@ -89,7 +89,10 @@ _APPLY_FIELD = {
 
 def _can_apply(ctx: CallContext, apply: bool) -> bool:
     """Gate: writes only happen when the caller is external AND set apply."""
-    return bool(apply) and ctx.external
+    # MCP transports are untyped JSON.  Do not treat strings such as
+    # ``"false"``/``"true"`` as booleans: a read-only token must never be
+    # able to smuggle a truthy value through the apply gate.
+    return apply is True and ctx.external
 
 
 @tool(
