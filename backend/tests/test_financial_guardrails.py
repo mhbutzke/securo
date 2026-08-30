@@ -249,6 +249,9 @@ async def test_financial_close_separates_position_principal_and_result(session, 
     assert snapshot["position_interest_income"] == Decimal("5")
     assert snapshot["consumption_recurring"] == Decimal("0")
 
+    following_month = await build_snapshot(session, test_workspace.id, "2026-02")
+    assert following_month["position_interest_income"] == Decimal("0")
+
 
 @pytest.mark.asyncio
 async def test_safe_rule_preview_commit_detects_drift_and_preserves_notes(

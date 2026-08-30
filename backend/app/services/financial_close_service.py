@@ -163,6 +163,8 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     position_interest_income = Decimal("0")
     position_costs = Decimal("0")
     for position, movement in active_movements:
+        if movement.effective_date < start or movement.effective_date > cutoff:
+            continue
         interest = Decimal(str(movement.interest_amount or 0))
         fees_and_taxes = Decimal(str(movement.fee_amount or 0)) + Decimal(str(movement.tax_amount or 0))
         if position.side == "receivable":
