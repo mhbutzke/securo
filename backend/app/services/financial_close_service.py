@@ -57,34 +57,52 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         )
     )
     connections = connection_rows.all()
-    active_connections = [row for row in connections if row.status == "active"]
-    sync_dates = [row.last_sync_at.date() for row in active_connections if row.last_sync_at is not None]
+    # A failed/expired connection still represents data in the workspace and
+    # must participate in the completeness gate until it is removed. Only
+    # explicit removal states are excluded.
+    gated_connections = [
+        row for row in connections if row.status not in {"removed", "deleted"}
+    ]
+    sync_dates = [row.last_sync_at.date() for row in gated_connections if row.last_sync_at is not None]
     latest_sync_at = max(
-        (row.last_sync_at for row in active_connections if row.last_sync_at is not None),
+        (row.last_sync_at for row in gated_connections if row.last_sync_at is not None),
         default=None,
     )
-    # Use the oldest active connection's sync date so a fresh connection does
+    # Use the oldest gated connection's sync date so a fresh connection does
     # not make stale data from another account appear reconciled. A workspace
-    # with no active connections is manual-only and needs no sync gate. An
-    # active connection with no sync is clamped to today for future periods.
-    if sync_dates:
-        sync_cutoff = min(sync_dates)
-    elif active_connections:
-        sync_cutoff = date.today()
-    else:
-        sync_cutoff = None
-    cutoff = min(end, sync_cutoff) if sync_cutoff is not None else end
-    sync_is_stale = bool(active_connections) and (not sync_dates or min(sync_dates) < end)
-    if not active_connections:
-        cutoff_source = "period_end"
+    # with no connections is manual-only and needs no sync gate. A connection
+    # with no sync is clamped to today for future periods.
+    sync_cutoff = min(sync_dates) if sync_dates else date.today()
+    cutoff = min(end, sync_cutoff)
+    missing_sync = bool(gated_connections) and len(sync_dates) < len(gated_connections)
+    sync_is_stale = bool(gated_connections) and (missing_sync or min(sync_dates, default=end) < end)
+    if not gated_connections:
+        cutoff_source = "today" if end > date.today() else "period_end"
     elif not sync_dates:
         cutoff_source = "no_sync"
-    elif min(sync_dates) < end:
+    elif missing_sync or min(sync_dates) < end:
         cutoff_source = "last_sync"
     else:
         cutoff_source = "period_end"
+    positions = await session.scalars(
+        select(Position).options(selectinload(Position.movements)).where(
+            Position.workspace_id == workspace_id, Position.is_archived == False
+        )
+    )
+    positions = list(positions.unique().all())
+    active_movements: list[tuple[Position, object]] = []
+    linked_movement_ids: dict[uuid.UUID, object] = {}
+    for position in positions:
+        for movement in position.movements:
+            if movement.effective_date > cutoff:
+                continue
+            if movement.reversed_at is not None and movement.reversed_at.date() <= cutoff:
+                continue
+            active_movements.append((position, movement))
+            if movement.transaction_id is not None:
+                linked_movement_ids[movement.transaction_id] = movement
     tx_result = await session.execute(
-        select(Transaction, Account.type, Category.treat_as_transfer, Category.is_ignored)
+        select(Transaction, Category.treat_as_transfer, Category.is_ignored)
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(Transaction.workspace_id == workspace_id, Transaction.date >= start, Transaction.date <= cutoff)
@@ -94,20 +112,22 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     consumption = Decimal("0")
     transfers = Decimal("0")
     ignored = Decimal("0")
-    for tx, account_type, as_transfer, category_ignored in tx_result.all():
+    for tx, as_transfer, category_ignored in tx_result.all():
         amount = abs(Decimal(str(tx.amount or 0)))
         if tx.is_ignored or category_ignored:
             ignored += amount
             continue
-        # A credit posted to a card bill is a settlement/credit adjustment,
-        # never economic income. Keep it in the transfer bucket so paying the
-        # bill cannot create a second income/expense event.
-        is_card_settlement = (
-            account_type == "credit_card"
-            and tx.type == "credit"
-            and tx.bill_id is not None
-        )
-        if tx.transfer_pair_id is not None or as_transfer or is_card_settlement:
+        linked_movement = linked_movement_ids.get(tx.id)
+        if linked_movement is not None:
+            # A transaction linked to a Position is a cash leg of a
+            # patrimonial movement. Keep it out of P&L; any explicit interest,
+            # fee or tax on the movement is added below as result.
+            transfers += abs(Decimal(str(linked_movement.cash_amount or tx.amount or 0)))
+            continue
+        # A credit-card refund is a real credit even though it belongs to a
+        # bill; only an explicit transfer pair/category marks a settlement.
+        # This prevents refunds from being silently discarded as payments.
+        if tx.transfer_pair_id is not None or as_transfer:
             transfers += amount
             continue
         if tx.type == "credit":
@@ -116,10 +136,14 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             consumption += amount
 
     account_rows = await session.execute(
-        select(Account).where(Account.workspace_id == workspace_id, Account.is_closed == False)
+        select(Account).where(Account.workspace_id == workspace_id)
     )
     account_balance = Decimal("0")
     for account in account_rows.scalars().all():
+        # A close made after the requested cutoff still belongs in the
+        # historical net worth. Accounts closed on or before the cutoff do not.
+        if account.is_closed and account.closed_at is not None and account.closed_at.date() <= cutoff:
+            continue
         account_balance += await _snapshot_account_balance(session, account, cutoff)
 
     assets = await session.scalars(select(Asset).where(Asset.workspace_id == workspace_id, Asset.is_archived == False))
@@ -134,13 +158,20 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             value = asset.purchase_price if asset.purchase_date is None or asset.purchase_date <= cutoff else Decimal("0")
         asset_total += Decimal(str(value or 0))
 
-    positions = await session.scalars(
-        select(Position).options(selectinload(Position.movements)).where(
-            Position.workspace_id == workspace_id, Position.is_archived == False
-        )
-    )
     receivables = Decimal("0")
     liabilities = Decimal("0")
+    position_interest_income = Decimal("0")
+    position_costs = Decimal("0")
+    for position, movement in active_movements:
+        interest = Decimal(str(movement.interest_amount or 0))
+        fees_and_taxes = Decimal(str(movement.fee_amount or 0)) + Decimal(str(movement.tax_amount or 0))
+        if position.side == "receivable":
+            position_interest_income += interest
+        else:
+            position_costs += interest
+        position_costs += fees_and_taxes
+    income += position_interest_income
+    consumption += position_costs
     for position in positions:
         principal = sum(
             (m.principal_amount if m.kind in ("opening", "increase") else -m.principal_amount
@@ -169,6 +200,8 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         "latest_sync_at": latest_sync_at.isoformat() if latest_sync_at is not None else None,
         "sync_is_stale": sync_is_stale,
         "income_economic": income,
+        "position_interest_income": position_interest_income,
+        "position_costs": position_costs,
         "consumption_recurring": consumption,
         "transfers_and_patrimonial_movements": transfers,
         "ignored_amount": ignored,
@@ -201,6 +234,7 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             "period_policy": "Only transactions dated inside the requested month and available by the cutoff; future rows are excluded",
             "cutoff_policy": "The latest workspace synchronization limits the effective cutoff",
             "savings_rate": "null when economic income is not positive",
-            "principal_withdrawals": "excluded from economic income",
+            "principal_withdrawals": "excluded from economic income; linked cash legs are patrimonial transfers",
+            "position_result": "interest increases/lowers result by side; fees and taxes are costs",
         },
     }

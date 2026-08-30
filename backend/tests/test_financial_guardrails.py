@@ -84,6 +84,8 @@ async def test_financial_close_uses_latest_sync_as_cutoff(session, test_user, te
         external_id="item-1", institution_name="Test bank",
         last_sync_at=datetime(2026, 1, 15, 12, tzinfo=timezone.utc),
     ))
+    account.is_closed = True
+    account.closed_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
     await session.flush()
     session.add_all([
         Transaction(
@@ -105,6 +107,7 @@ async def test_financial_close_uses_latest_sync_as_cutoff(session, test_user, te
     assert snapshot["cutoff_source"] == "last_sync"
     assert snapshot["sync_is_stale"] is True
     assert snapshot["consumption_recurring"] == Decimal("10")
+    assert snapshot["account_balance"] == Decimal("-10")
 
 
 @pytest.mark.asyncio
@@ -157,7 +160,7 @@ async def test_financial_close_keeps_position_until_reversal_date(session, test_
 
 
 @pytest.mark.asyncio
-async def test_financial_close_does_not_count_card_bill_credit_as_income(session, test_user, test_workspace):
+async def test_financial_close_keeps_card_refund_as_income(session, test_user, test_workspace):
     account = Account(
         user_id=test_user.id, workspace_id=test_workspace.id, name="Card", type="credit_card",
         balance=Decimal("0"), currency="BRL",
@@ -179,8 +182,8 @@ async def test_financial_close_does_not_count_card_bill_credit_as_income(session
 
     snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
 
-    assert snapshot["income_economic"] == Decimal("0")
-    assert snapshot["transfers_and_patrimonial_movements"] == Decimal("20")
+    assert snapshot["income_economic"] == Decimal("20")
+    assert snapshot["transfers_and_patrimonial_movements"] == Decimal("0")
 
 
 @pytest.mark.asyncio
@@ -207,6 +210,43 @@ async def test_financial_close_clamps_future_period_without_sync(session, test_u
 
     assert snapshot["cutoff_source"] == "no_sync"
     assert snapshot["sync_is_stale"] is True
+    assert snapshot["consumption_recurring"] == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_financial_close_separates_position_principal_and_result(session, test_user, test_workspace):
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Cash", type="checking",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    tx = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        description="Loan advance", amount=Decimal("105"), date=date(2026, 1, 10),
+        type="debit", source="manual",
+    )
+    session.add(tx)
+    await session.flush()
+    position = Position(
+        user_id=test_user.id, workspace_id=test_workspace.id, side="receivable",
+        name="Loan", currency="BRL", original_principal=Decimal("100"),
+        start_date=date(2026, 1, 10), liquidity="illiquid", status="open",
+    )
+    session.add(position)
+    await session.flush()
+    session.add(PositionMovement(
+        position_id=position.id, kind="opening", principal_amount=Decimal("100"),
+        cash_amount=Decimal("105"), interest_amount=Decimal("5"),
+        effective_date=date(2026, 1, 10), idempotency_key="loan-advance", transaction_id=tx.id,
+    ))
+    await session.commit()
+
+    snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
+
+    assert snapshot["transfers_and_patrimonial_movements"] == Decimal("105")
+    assert snapshot["income_economic"] == Decimal("5")
+    assert snapshot["position_interest_income"] == Decimal("5")
     assert snapshot["consumption_recurring"] == Decimal("0")
 
 
