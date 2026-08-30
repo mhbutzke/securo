@@ -11,6 +11,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.account import Account
     from app.models.asset_group import AssetGroup
+    from app.models.position import Position
     from app.models.user import User
 
 
@@ -57,6 +58,28 @@ collection_asset_groups = Table(
 )
 
 
+# Positions are first-class members of a reporting lens as well. Keeping a
+# separate many-to-many table avoids overloading asset groups and lets a
+# collection include a liability/receivable without duplicating it as an
+# Asset.
+collection_positions = Table(
+    "collection_positions",
+    Base.metadata,
+    Column(
+        "collection_id",
+        UUID(as_uuid=True),
+        ForeignKey("collections.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "position_id",
+        UUID(as_uuid=True),
+        ForeignKey("positions.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
 class Collection(Base):
     """A user-defined, named group of accounts used to filter the app's
     views (dashboard, reports, transactions) — issue #105.
@@ -86,5 +109,8 @@ class Collection(Base):
     )
     asset_groups: Mapped[list["AssetGroup"]] = relationship(
         secondary=collection_asset_groups, lazy="selectin"
+    )
+    positions: Mapped[list["Position"]] = relationship(
+        secondary=collection_positions, lazy="selectin"
     )
     user: Mapped["User"] = relationship()

@@ -121,6 +121,7 @@ async def _net_worth_at(
     primary_currency: str = "USD",
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
+    position_ids: Optional[list[uuid.UUID]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
@@ -161,7 +162,11 @@ async def _net_worth_at(
                 ))
 
     # Per-asset composition at the cutoff date
-    filtered = account_ids is not None
+    filtered = (
+        account_ids is not None
+        or asset_group_ids is not None
+        or position_ids is not None
+    )
     asset_stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
@@ -205,11 +210,16 @@ async def _net_worth_at(
     # represented as negative Assets. This prevents a loan or deposit from
     # being counted twice and keeps liabilities out of the investible-asset
     # taxonomy.
+    position_filters = []
+    if position_ids is not None:
+        position_filters.append(Position.id.in_(position_ids))
+    elif filtered:
+        position_filters.append(Position.group_id.in_(asset_group_ids or []))
     positions_result = await session.execute(
         select(Position).options(selectinload(Position.movements)).where(
             Position.workspace_id == workspace_id,
             Position.is_archived == False,
-            *( [Position.group_id.in_(asset_group_ids or [])] if filtered else [] ),
+            *position_filters,
         )
     )
     for position in positions_result.scalars().unique().all():
@@ -314,11 +324,12 @@ async def get_net_worth_report(
     currency: str = "USD",
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
+    position_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
 ) -> ReportResponse:
     """Build a full ReportResponse for net worth over time."""
     # A wallet-only collection (wallets, no accounts) still filters.
-    if asset_group_ids is not None and account_ids is None:
+    if (asset_group_ids is not None or position_ids is not None) and account_ids is None:
         account_ids = []
     today = date.today()
     start = _report_start_date(today, months, period)
@@ -332,7 +343,10 @@ async def get_net_worth_report(
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
-        dp = await _net_worth_at(session, workspace_id, point, primary_currency, account_ids, asset_group_ids)
+        dp = await _net_worth_at(
+            session, workspace_id, point, primary_currency,
+            account_ids, asset_group_ids, position_ids,
+        )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
         trend.append(dp)
@@ -341,7 +355,10 @@ async def get_net_worth_report(
     current = trend[-1] if trend else ReportDataPoint(
         date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
     )
-    baseline = await _net_worth_at(session, workspace_id, start, primary_currency, account_ids, asset_group_ids)
+    baseline = await _net_worth_at(
+        session, workspace_id, start, primary_currency,
+        account_ids, asset_group_ids, position_ids,
+    )
     previous = baseline if trend else current
 
     change_amount = current.value - previous.value

@@ -15,6 +15,7 @@ class CollectionCreate(CollectionBase):
     # Accounts and wallets (asset_groups) to include. Empty is allowed.
     account_ids: list[uuid.UUID] = []
     wallet_ids: list[uuid.UUID] = []
+    position_ids: list[uuid.UUID] = []
 
 
 class CollectionUpdate(BaseModel):
@@ -25,6 +26,7 @@ class CollectionUpdate(BaseModel):
     # When provided, replaces that membership wholesale. None leaves it untouched.
     account_ids: Optional[list[uuid.UUID]] = None
     wallet_ids: Optional[list[uuid.UUID]] = None
+    position_ids: Optional[list[uuid.UUID]] = None
 
 
 class CollectionRead(CollectionBase):
@@ -35,5 +37,8 @@ class CollectionRead(CollectionBase):
     # Asset wallets (asset_groups) in this collection.
     wallet_ids: list[uuid.UUID] = []
     wallet_count: int = 0
+    # Receivables/liabilities included in this reporting lens.
+    position_ids: list[uuid.UUID] = []
+    position_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)

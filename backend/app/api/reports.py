@@ -32,6 +32,7 @@ async def get_net_worth(
     interval: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
     account_ids: Optional[list[uuid.UUID]] = Query(None),
     asset_group_ids: Optional[list[uuid.UUID]] = Query(None),
+    position_ids: Optional[list[uuid.UUID]] = Query(None),
     period: str | None = Query(None, pattern="^ytd$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
@@ -39,6 +40,7 @@ async def get_net_worth(
     return await report_service.get_net_worth_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
         account_ids=account_ids, asset_group_ids=asset_group_ids, period=period,
+        position_ids=position_ids,
     )
 
 

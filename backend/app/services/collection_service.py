@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.asset_group import AssetGroup
 from app.models.collection import Collection
+from app.models.position import Position
 from app.schemas.collection import CollectionCreate, CollectionRead, CollectionUpdate
 
 
@@ -14,6 +15,7 @@ def _to_read(collection: Collection) -> CollectionRead:
     # Members are eager-loaded (selectin) so this is N+1-free.
     account_ids = [a.id for a in collection.accounts]
     wallet_ids = [g.id for g in collection.asset_groups]
+    position_ids = [p.id for p in collection.positions]
     return CollectionRead(
         id=collection.id,
         user_id=collection.user_id,
@@ -25,6 +27,8 @@ def _to_read(collection: Collection) -> CollectionRead:
         account_count=len(account_ids),
         wallet_ids=wallet_ids,
         wallet_count=len(wallet_ids),
+        position_ids=position_ids,
+        position_count=len(position_ids),
     )
 
 
@@ -54,6 +58,21 @@ async def _wallets_in_workspace(
         select(AssetGroup).where(
             AssetGroup.workspace_id == workspace_id,
             AssetGroup.id.in_(wallet_ids),
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def _positions_in_workspace(
+    session: AsyncSession, workspace_id: uuid.UUID, position_ids: list[uuid.UUID]
+) -> list[Position]:
+    """Resolve Position ids within the active workspace (IDOR guard)."""
+    if not position_ids:
+        return []
+    result = await session.execute(
+        select(Position).where(
+            Position.workspace_id == workspace_id,
+            Position.id.in_(position_ids),
         )
     )
     return list(result.scalars().all())
@@ -108,6 +127,7 @@ async def create_collection(
     )
     collection.accounts = await _accounts_in_workspace(session, workspace_id, data.account_ids)
     collection.asset_groups = await _wallets_in_workspace(session, workspace_id, data.wallet_ids)
+    collection.positions = await _positions_in_workspace(session, workspace_id, data.position_ids)
     session.add(collection)
     await session.commit()
     await session.refresh(collection)
@@ -127,12 +147,15 @@ async def update_collection(
     fields = data.model_dump(exclude_unset=True)
     account_ids = fields.pop("account_ids", None)
     wallet_ids = fields.pop("wallet_ids", None)
+    position_ids = fields.pop("position_ids", None)
     for key, value in fields.items():
         setattr(collection, key, value)
     if account_ids is not None:
         collection.accounts = await _accounts_in_workspace(session, workspace_id, account_ids)
     if wallet_ids is not None:
         collection.asset_groups = await _wallets_in_workspace(session, workspace_id, wallet_ids)
+    if position_ids is not None:
+        collection.positions = await _positions_in_workspace(session, workspace_id, position_ids)
 
     await session.commit()
     await session.refresh(collection)
