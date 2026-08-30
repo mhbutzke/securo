@@ -26,13 +26,17 @@ async def get_exposure(session: AsyncSession, workspace_id: uuid.UUID, account_i
     open_total = Decimal(str(open_bill.total_amount)) if open_bill else Decimal("0")
     after_current = max(committed - closed_total - open_total, Decimal("0"))
     future_installments = await session.scalar(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+        select(func.coalesce(func.sum(func.abs(Transaction.amount)), 0)).where(
             Transaction.account_id == account_id,
             Transaction.workspace_id == workspace_id,
             Transaction.total_installments.is_not(None),
             Transaction.installment_number < Transaction.total_installments,
             Transaction.type == "debit",
             Transaction.status != "cancelled",
+            # Only parcels whose cash-flow date is still ahead are future
+            # exposure. Historical installments remain part of the issuer
+            # balance/bill reconciliation and must not be counted twice.
+            func.coalesce(Transaction.effective_date, Transaction.date) > today,
         )
     )
     unbilled = await session.scalar(
