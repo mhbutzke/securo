@@ -51,6 +51,7 @@ _ALLOWED_CONDITION_OPS = {
 _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
 }
+_MAX_CORRECTION_BATCH_SIZE = 20
 
 
 def _rule_item_value(item, key: str):
@@ -1440,6 +1441,10 @@ async def commit_safe_category_apply(
         if existing is not None:
             return existing, len(existing.items)
         raise ValueError("Preview is stale; refresh before committing")
+    if len(diffs) > _MAX_CORRECTION_BATCH_SIZE:
+        raise ValueError(
+            "Correction batches are limited to 20 transactions; select transaction_ids explicitly"
+        )
     batch = CorrectionBatch(
         workspace_id=workspace_id, user_id=user_id, digest=digest,
         operation="rule_category_apply",

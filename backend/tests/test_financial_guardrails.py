@@ -164,14 +164,14 @@ async def test_safe_rule_preview_detects_rule_input_drift(client, auth_headers, 
 
 
 @pytest.mark.asyncio
-async def test_safe_rule_preview_rejects_more_than_50_selected_transactions(
+async def test_safe_rule_preview_rejects_more_than_20_selected_transactions(
     client, auth_headers
 ):
     today = date.today()
     body = {
         "from_date": today.replace(day=1).isoformat(),
         "to_date": today.isoformat(),
-        "transaction_ids": [str(uuid.uuid4()) for _ in range(51)],
+        "transaction_ids": [str(uuid.uuid4()) for _ in range(21)],
     }
     response = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
     assert response.status_code == 422

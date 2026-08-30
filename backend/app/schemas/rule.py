@@ -203,8 +203,8 @@ class RuleApplyPreviewRequest(BaseModel):
     limit: int = Field(default=100, ge=1, le=500)
     transaction_ids: list[uuid.UUID] | None = Field(
         default=None,
-        max_length=50,
-        description="Optional transaction IDs for a narrow, item-by-item correction batch.",
+        max_length=20,
+        description="Optional transaction IDs for a narrow correction batch (at most 20).",
     )
 
     @model_validator(mode="after")
@@ -238,9 +238,9 @@ class RuleApplyPreviewResponse(BaseModel):
 
 class RuleApplyCommitRequest(RuleApplyPreviewRequest):
     @model_validator(mode="after")
-    def require_transaction_selection(self):
-        if not self.transaction_ids:
-            raise ValueError("transaction_ids is required when committing a correction batch")
+    def reject_empty_transaction_selection(self):
+        if self.transaction_ids is not None and not self.transaction_ids:
+            raise ValueError("transaction_ids cannot be empty when provided")
         return self
 
 
