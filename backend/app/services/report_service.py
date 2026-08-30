@@ -6,11 +6,13 @@ from typing import Optional
 
 from sqlalchemy import String, select, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
+from app.models.position import Position
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
@@ -198,6 +200,37 @@ async def _net_worth_at(
                 color=_ASSET_TYPE_COLORS.get(asset.type, "#6B7280"),
                 group="assets",
             ))
+
+    # Receivables/liabilities use the Position ledger rather than being
+    # represented as negative Assets. This prevents a loan or deposit from
+    # being counted twice and keeps liabilities out of the investible-asset
+    # taxonomy.
+    positions_result = await session.execute(
+        select(Position).options(selectinload(Position.movements)).where(
+            Position.workspace_id == workspace_id,
+            Position.is_archived == False,
+            *( [Position.group_id.in_(asset_group_ids or [])] if filtered else [] ),
+        )
+    )
+    for position in positions_result.scalars().unique().all():
+        balance = sum(
+            (m.principal_amount if m.kind in ("opening", "increase") else -m.principal_amount
+             for m in position.movements if m.reversed_at is None),
+            Decimal("0"),
+        )
+        if balance <= 0:
+            continue
+        converted, _ = await convert(session, balance, position.currency, primary_currency, cutoff)
+        converted_val = round(float(converted), 2)
+        bucket = "assets" if position.side == "receivable" else "liabilities"
+        if bucket == "assets":
+            assets_total += converted_val
+        else:
+            liabilities_total += converted_val
+        composition.append(ReportCompositionItem(
+            key=str(position.id), label=position.name, value=converted_val,
+            color="#10B981" if bucket == "assets" else "#EF4444", group=bucket,
+        ))
 
     net_worth = accounts_total + assets_total - liabilities_total
 

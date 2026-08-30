@@ -35,6 +35,11 @@ class CallContext:
     # n8n, etc.) rather than Securo's own runtime. Used for log tagging;
     # tool authorization is identical (same user scope).
     external: bool = False
+    jti: Optional[str] = None
+    scopes: frozenset[str] = frozenset({"read"})
+
+    def has_scope(self, scope: str) -> bool:
+        return scope in self.scopes
 
 
 def _settings():
@@ -74,4 +79,6 @@ def verify_request(request: Request) -> CallContext:
         conversation_id=uuid.UUID(conv_raw) if conv_raw else None,
         agent_id=uuid.UUID(agent_raw) if agent_raw else None,
         external=bool(payload.get("ext")),
+        jti=payload.get("jti"),
+        scopes=frozenset(payload.get("scopes") or (["read"] if payload.get("ext") else ["read", "write"])),
     )

@@ -3,6 +3,7 @@ from app.agents.models.connection import LlmConnection
 from app.agents.models.conversation import Conversation, Message
 from app.agents.models.knowledge import KnowledgeDoc, KnowledgeChunk
 from app.agents.models.usage import LlmUsage
+from app.agents.models.mcp_token import McpTokenRevocation
 
 # Re-run the autostamp installer now that Agent + Conversation are loaded so
 # their inserts inherit workspace_id like the core financial models. Safe to
@@ -20,4 +21,5 @@ __all__ = [
     "KnowledgeDoc",
     "KnowledgeChunk",
     "LlmUsage",
+    "McpTokenRevocation",
 ]

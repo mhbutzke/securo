@@ -3,7 +3,7 @@ import datetime
 import uuid
 from typing import Any, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RuleCondition(BaseModel):
@@ -189,3 +189,53 @@ class RulePreviewResponse(BaseModel):
     # whether more can be fetched.
     sample: list[RulePreviewItem]
     offset: int = 0
+
+
+class RuleApplyPreviewRequest(BaseModel):
+    """Bounded, read-only preview for the safe history reapplication flow."""
+
+    from_date: datetime.date
+    to_date: datetime.date
+    origins: list[str] = Field(
+        default_factory=lambda: ["uncategorized", "legacy", "provider", "rule"],
+        description="Category owners eligible for replacement; manual is never eligible.",
+    )
+    limit: int = Field(default=100, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must be on or after from_date")
+        invalid = set(self.origins) - {"uncategorized", "legacy", "provider", "rule", "system"}
+        if invalid:
+            raise ValueError("origins may only contain uncategorized, legacy, provider, rule or system")
+        return self
+
+
+class RuleApplyPreviewItem(BaseModel):
+    id: uuid.UUID
+    date: datetime.date
+    description: str
+    current_category_id: Optional[uuid.UUID] = None
+    new_category_id: Optional[uuid.UUID] = None
+    rule_id: Optional[uuid.UUID] = None
+
+
+class RuleApplyPreviewResponse(BaseModel):
+    digest: str
+    from_date: datetime.date
+    to_date: datetime.date
+    origins: list[str]
+    matched: int
+    will_change: int
+    sample: list[RuleApplyPreviewItem]
+
+
+class RuleApplyCommitRequest(RuleApplyPreviewRequest):
+    pass
+
+
+class RuleApplyCommitResponse(BaseModel):
+    batch_id: uuid.UUID
+    digest: str
+    applied: int

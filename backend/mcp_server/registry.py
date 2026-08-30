@@ -57,7 +57,7 @@ def tool(
     return deco
 
 
-def list_tools() -> list[dict[str, Any]]:
+def list_tools(ctx: CallContext | None = None) -> list[dict[str, Any]]:
     """MCP-compatible tool list payload."""
     return [
         {
@@ -67,6 +67,7 @@ def list_tools() -> list[dict[str, Any]]:
             "_securo": {"is_proposal": s.is_proposal, "tags": s.tags},
         }
         for s in REGISTRY.values()
+        if ctx is None or not ctx.external or ctx.has_scope("write") or not s.is_proposal
     ]
 
 
@@ -79,4 +80,6 @@ async def call_tool(
     spec = REGISTRY.get(name)
     if spec is None:
         raise KeyError(f"unknown tool: {name}")
+    if ctx.external and spec.is_proposal and arguments and arguments.get("apply") is True and not ctx.has_scope("write"):
+        raise PermissionError("MCP token is read-only")
     return await spec.handler(session=session, ctx=ctx, **(arguments or {}))

@@ -19,7 +19,9 @@ from app.schemas.account import (
     AccountUpdate,
     CreditCardBillRead,
 )
+from app.schemas.credit_card_exposure import CreditCardExposure
 from app.services import account_service
+from app.services import credit_card_exposure_service
 from app.services.fx_rate_service import convert
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -128,6 +130,18 @@ async def get_account_bills(
     if bills is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
     return bills
+
+
+@router.get("/{account_id}/credit-card-exposure", response_model=CreditCardExposure)
+async def get_credit_card_exposure(
+    account_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    exposure = await credit_card_exposure_service.get_exposure(session, ctx.workspace.id, account_id)
+    if exposure is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credit card account not found")
+    return exposure
 
 
 @router.get("/{account_id}", response_model=AccountRead)

@@ -22,6 +22,7 @@ from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_hidden_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.category_assignment import assign_category
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 
@@ -788,6 +789,10 @@ async def import_transactions(
             payee=import_payee_raw,
             payee_id=import_payee_id,
             category_id=category_id,
+            category_origin=(
+                "manual" if user_category_id is not None else
+                "provider" if category_id is not None else None
+            ),
             notes=getattr(txn_data, "notes", None),
         )
         apply_effective_date(incoming, account)
@@ -824,7 +829,12 @@ async def import_transactions(
             # provenance is recorded outright.
             placeholder.original_description = txn_data.description
             if placeholder.category_id is None:
-                placeholder.category_id = preview.category_id
+                assign_category(
+                    placeholder,
+                    preview.category_id,
+                    origin=getattr(preview, "category_origin", None),
+                    rule_id=getattr(preview, "category_rule_id", None),
+                )
             if import_payee_raw and not placeholder.payee:
                 placeholder.payee = import_payee_raw
             if placeholder.payee_id is None:

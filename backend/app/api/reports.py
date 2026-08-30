@@ -8,8 +8,22 @@ from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
 from app.schemas.report import ReportResponse
 from app.services import report_service
+from app.services import financial_close_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
+
+
+@router.get("/financial-close")
+async def financial_close(
+    period: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await financial_close_service.build_snapshot(session, ctx.workspace.id, period)
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/net-worth", response_model=ReportResponse)

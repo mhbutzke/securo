@@ -132,3 +132,12 @@ def test_default_token_has_no_external_flag():
 
     ctx = verify_request(_req_bearer(token))
     assert ctx.external is False
+
+
+def test_external_tokens_default_to_read_only_scope():
+    from mcp_server.auth import verify_request
+
+    token = mint_token(user_id=uuid.uuid4(), external=True)
+    ctx = verify_request(_req_bearer(token))
+    assert ctx.scopes == frozenset({"read"})
+    assert not ctx.has_scope("write")

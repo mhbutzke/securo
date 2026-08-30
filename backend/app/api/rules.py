@@ -20,6 +20,10 @@ from app.schemas.rule import (
     RulePreviewResponse,
     RuleRead,
     RuleUpdate,
+    RuleApplyPreviewRequest,
+    RuleApplyPreviewResponse,
+    RuleApplyCommitRequest,
+    RuleApplyCommitResponse,
 )
 from app.services import rule_service
 from app.services.rule_service import DuplicateRuleError
@@ -283,3 +287,37 @@ async def apply_all_rules(
     """Re-apply all active rules to all existing transactions."""
     count = await rule_service.apply_all_rules(session, ctx.workspace.id)
     return {"applied": count}
+
+
+@router.post("/apply-preview", response_model=RuleApplyPreviewResponse)
+async def safe_apply_preview(
+    data: RuleApplyPreviewRequest,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Preview category-only rule changes for a mandatory bounded period."""
+    return await rule_service.preview_safe_category_apply(
+        session, ctx.workspace.id, data.from_date, data.to_date, data.origins, data.limit
+    )
+
+
+@router.post("/apply-preview/{digest}/commit", response_model=RuleApplyCommitResponse)
+async def safe_apply_commit(
+    digest: str,
+    data: RuleApplyCommitRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Commit a previously previewed category-only operation.
+
+    The preview digest is recomputed inside the same request; any ledger or
+    rule drift returns 409 and leaves all rows untouched.
+    """
+    try:
+        batch, applied = await rule_service.commit_safe_category_apply(
+            session, ctx.workspace.id, ctx.user_id, digest,
+            data.from_date, data.to_date, data.origins, data.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return RuleApplyCommitResponse(batch_id=batch.id, digest=digest, applied=applied)

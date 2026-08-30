@@ -308,6 +308,7 @@ async def generate_pending(
                     user_id=user_id,
                     account_id=recurring.account_id,
                     category_id=recurring.category_id,
+                    category_origin="system" if recurring.category_id is not None else None,
                     description=recurring.description,
                     amount=recurring.amount,
                     currency=recurring.currency,

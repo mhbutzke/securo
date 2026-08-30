@@ -93,7 +93,7 @@ x-backend-base: &backend-base
 
 services:
   redis:
-    image: docker.io/library/redis:8-alpine
+    image: docker.io/library/redis@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
@@ -105,7 +105,7 @@ services:
     # docker.io/pgvector/pgvector:pg16 is a drop-in replacement for postgres:16
     # that ships the `vector` extension. Required for the agents
     # knowledge base; harmless when AGENTS_ENABLED=false.
-    image: ${DB_IMAGE:-docker.io/pgvector/pgvector:pg16}
+    image: ${DB_IMAGE:-docker.io/pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b}
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -122,17 +122,16 @@ services:
   backend:
     <<: *backend-base
     command:
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port
-      8000 --reload"
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     ports:
-      - "${FRONTEND_PORT:-3000}:5173"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:5173"
     environment:
       BACKEND_URL: http://backend:8000
       # Also drives Vite's allowedHosts, so a proxied domain is not blocked.

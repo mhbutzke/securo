@@ -30,6 +30,12 @@ class Transaction(Base):
     )
     account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
+    # Ownership of the category. ``legacy`` is used by the expand-only
+    # migration for rows that predate provenance tracking.
+    category_origin: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
+    category_rule_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rules.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Provider's transaction ID
     description: Mapped[str] = mapped_column(String(500))
     original_description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

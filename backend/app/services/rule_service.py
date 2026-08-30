@@ -1,5 +1,8 @@
 # backend/app/services/rule_service.py
+import hashlib
+import json
 import uuid
+from datetime import date
 from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
@@ -10,6 +13,7 @@ from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
 from app.models.transaction import Transaction
+from app.models.correction_batch import CorrectionBatch, CorrectionBatchItem
 
 from app.schemas.rule import (
     RuleCreate,
@@ -1116,6 +1120,8 @@ _PREVIEW_COLUMNS = (
     Transaction.workspace_id,
     Transaction.account_id,
     Transaction.category_id,
+    Transaction.category_origin,
+    Transaction.category_rule_id,
     Transaction.description,
     Transaction.original_description,
     Transaction.description_is_rule_managed,
@@ -1139,6 +1145,8 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         workspace_id=transaction.workspace_id,
         account_id=transaction.account_id,
         category_id=transaction.category_id,
+        category_origin=getattr(transaction, "category_origin", None),
+        category_rule_id=getattr(transaction, "category_rule_id", None),
         description=transaction.description,
         original_description=transaction.original_description,
         description_is_rule_managed=bool(transaction.description_is_rule_managed),
@@ -1224,6 +1232,8 @@ async def apply_rules_to_transaction(
                 category_set,
                 hidden_category_ids=hidden_categories,
             )
+            if category_set and getattr(transaction, "category_origin", None) == "rule":
+                transaction.category_rule_id = rule.id
 
 
 def _rule_effect_state(tx: Transaction) -> tuple:
@@ -1234,6 +1244,8 @@ def _rule_effect_state(tx: Transaction) -> tuple:
     """
     return (
         tx.category_id,
+        getattr(tx, "category_origin", None),
+        getattr(tx, "category_rule_id", None),
         tx.payee_id,
         tx.description,
         tx.original_description,
@@ -1241,6 +1253,190 @@ def _rule_effect_state(tx: Transaction) -> tuple:
         tx.notes,
         tx.is_ignored,
     )
+
+
+def _safe_category_state(tx: Transaction) -> dict:
+    return {
+        "category_id": str(tx.category_id) if tx.category_id else None,
+        "category_origin": getattr(tx, "category_origin", None),
+        "category_rule_id": str(getattr(tx, "category_rule_id", None))
+        if getattr(tx, "category_rule_id", None) else None,
+    }
+
+
+async def _safe_rule_snapshot(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    from_date: date,
+    to_date: date,
+    origins: list[str],
+    limit: int = 100,
+) -> tuple[str, list[dict], int]:
+    """Compute a deterministic category-only correction preview.
+
+    The digest includes the eligible rows and active rule definitions. A
+    commit recomputes this exact snapshot, so edits made between preview and
+    commit fail closed instead of applying to a moving ledger.
+    """
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.source != "opening_balance",
+            Transaction.date >= from_date,
+            Transaction.date <= to_date,
+        )
+        .order_by(Transaction.date, Transaction.id)
+    )
+    transactions = list(result.scalars().all())
+    rules_result = await session.execute(
+        select(Rule)
+        .where(Rule.workspace_id == workspace_id, Rule.is_active == True)
+        .order_by(Rule.priority, Rule.id)
+    )
+    rules = list(rules_result.scalars().all())
+    rule_payload = [
+        {"id": str(r.id), "priority": r.priority, "conditions_op": r.conditions_op,
+         "conditions": r.conditions or [], "actions": r.actions or []}
+        for r in rules
+    ]
+    diffs: list[dict] = []
+    matched = 0
+    for tx in transactions:
+        current_origin = getattr(tx, "category_origin", None)
+        eligible = (current_origin in origins) or (current_origin is None and "uncategorized" in origins)
+        if not eligible:
+            continue
+        target_id = None
+        matched_rule = None
+        for rule in rules:
+            matches = evaluate_conditions(rule.conditions_op, rule.conditions or [], tx)
+            if not matches and tx.original_description is not None:
+                original = _rule_preview(tx)
+                original.description = tx.original_description
+                matches = evaluate_conditions(rule.conditions_op, rule.conditions or [], original)
+            if not matches:
+                continue
+            matched += 1
+            for action in rule.actions or []:
+                if action.get("op") == "set_category":
+                    try:
+                        target_id = uuid.UUID(str(action.get("value")))
+                    except (TypeError, ValueError):
+                        target_id = None
+                    if target_id is not None:
+                        matched_rule = rule
+                        break
+            if matched_rule is not None:
+                break
+        if matched_rule is None:
+            continue
+        if tx.category_id != target_id or current_origin != "rule" or getattr(tx, "category_rule_id", None) != matched_rule.id:
+            diffs.append({
+                "id": tx.id,
+                "date": tx.date,
+                "description": tx.description,
+                "before": _safe_category_state(tx),
+                "after": {"category_id": str(target_id), "category_origin": "rule", "category_rule_id": str(matched_rule.id)},
+                "rule_id": matched_rule.id,
+            })
+    digest_payload = {
+        "workspace_id": str(workspace_id), "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(), "origins": sorted(origins),
+        "rules": rule_payload,
+        "rows": [
+            {"id": str(tx.id), "state": _safe_category_state(tx)}
+            for tx in transactions
+            if ((getattr(tx, "category_origin", None) in origins)
+                or (getattr(tx, "category_origin", None) is None and "uncategorized" in origins))
+        ],
+        "diffs": [
+            {"id": str(d["id"]), "before": d["before"], "after": d["after"]}
+            for d in diffs
+        ],
+    }
+    digest = hashlib.sha256(json.dumps(digest_payload, sort_keys=True, default=str).encode()).hexdigest()
+    return digest, diffs, matched
+
+
+async def preview_safe_category_apply(
+    session: AsyncSession, workspace_id: uuid.UUID, from_date: date, to_date: date,
+    origins: list[str], limit: int = 100,
+):
+    digest, diffs, matched = await _safe_rule_snapshot(
+        session, workspace_id, from_date, to_date, origins, limit
+    )
+    from app.schemas.rule import RuleApplyPreviewItem, RuleApplyPreviewResponse
+    return RuleApplyPreviewResponse(
+        digest=digest, from_date=from_date, to_date=to_date, origins=origins,
+        matched=matched, will_change=len(diffs),
+        sample=[RuleApplyPreviewItem(
+            id=d["id"], date=d["date"], description=d["description"],
+            current_category_id=uuid.UUID(d["before"]["category_id"]) if d["before"]["category_id"] else None,
+            new_category_id=uuid.UUID(d["after"]["category_id"]) if d["after"]["category_id"] else None,
+            rule_id=d["rule_id"],
+        ) for d in diffs[:limit]],
+    )
+
+
+async def commit_safe_category_apply(
+    session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID,
+    digest: str, from_date: date, to_date: date, origins: list[str], limit: int = 500,
+):
+    current_digest, diffs, _ = await _safe_rule_snapshot(
+        session, workspace_id, from_date, to_date, origins, limit
+    )
+    if current_digest != digest:
+        raise ValueError("Preview is stale; refresh before committing")
+    batch = CorrectionBatch(
+        workspace_id=workspace_id, user_id=user_id, digest=digest,
+        operation="rule_category_apply",
+    )
+    session.add(batch)
+    await session.flush()
+    tx_ids = [d["id"] for d in diffs]
+    if tx_ids:
+        rows_result = await session.execute(select(Transaction).where(Transaction.id.in_(tx_ids), Transaction.workspace_id == workspace_id))
+        rows = {tx.id: tx for tx in rows_result.scalars().all()}
+        for d in diffs:
+            tx = rows[d["id"]]
+            before = d["before"]
+            after = d["after"]
+            from app.services.category_assignment import assign_category
+            assign_category(tx, uuid.UUID(after["category_id"]), origin="rule", rule_id=uuid.UUID(after["category_rule_id"]))
+            session.add(CorrectionBatchItem(batch_id=batch.id, transaction_id=tx.id, before_state=before, after_state=after))
+    await session.commit()
+    return batch, len(diffs)
+
+
+async def undo_correction_batch(session: AsyncSession, workspace_id: uuid.UUID, batch_id: uuid.UUID) -> int:
+    result = await session.execute(
+        select(CorrectionBatch).where(CorrectionBatch.id == batch_id, CorrectionBatch.workspace_id == workspace_id)
+    )
+    batch = result.scalar_one_or_none()
+    if batch is None:
+        return -1
+    if batch.status == "undone":
+        return 0
+    count = 0
+    for item in batch.items:
+        tx = await session.get(Transaction, item.transaction_id)
+        if tx is None:
+            continue
+        # Undo is optimistic: don't overwrite a later manual decision.
+        current = _safe_category_state(tx)
+        if current != item.after_state:
+            continue
+        from app.services.category_assignment import assign_category
+        before_id = uuid.UUID(item.before_state["category_id"]) if item.before_state.get("category_id") else None
+        before_rule = uuid.UUID(item.before_state["category_rule_id"]) if item.before_state.get("category_rule_id") else None
+        assign_category(tx, before_id, origin=item.before_state.get("category_origin"), rule_id=before_rule, force_manual=True)
+        count += 1
+    batch.status = "undone"
+    from datetime import datetime, timezone
+    batch.undone_at = datetime.now(timezone.utc)
+    await session.commit()
+    return count
 
 
 async def preview_rule(
@@ -1421,6 +1617,8 @@ async def apply_single_rule(
             skip_description=_has_manual_description(tx),
             hidden_category_ids=hidden_categories,
         )
+        if getattr(tx, "category_origin", None) == "rule":
+            tx.category_rule_id = rule.id
         after = (
             tx.category_id,
             tx.payee_id,

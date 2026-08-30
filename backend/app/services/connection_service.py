@@ -48,6 +48,7 @@ from app.services.asset_group_service import (
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.category_assignment import assign_category
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -1094,6 +1095,7 @@ async def handle_oauth_callback(
                 payee_id=payee_id,
                 raw_data=txn_data.raw_data,
                 category_id=category_id,
+                category_origin="provider" if category_id is not None else None,
                 installment_number=txn_data.installment_number,
                 total_installments=txn_data.total_installments,
                 installment_total_amount=txn_data.installment_total_amount,
@@ -1885,6 +1887,7 @@ async def sync_connection(
                     payee_id=sync_payee_id,
                     raw_data=txn_data.raw_data,
                     category_id=category_id,
+                    category_origin="provider" if category_id is not None else None,
                     installment_number=txn_data.installment_number,
                     total_installments=txn_data.total_installments,
                     installment_total_amount=txn_data.installment_total_amount,
@@ -1930,7 +1933,12 @@ async def sync_connection(
                     # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
                     if placeholder.category_id is None:
-                        placeholder.category_id = preview.category_id
+                        assign_category(
+                            placeholder,
+                            preview.category_id,
+                            origin=getattr(preview, "category_origin", None),
+                            rule_id=getattr(preview, "category_rule_id", None),
+                        )
                     if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
                     if placeholder.payee_id is None:

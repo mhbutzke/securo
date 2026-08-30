@@ -16,6 +16,8 @@ from app.core.database import async_session_maker
 from mcp_server import tools as _tools_pkg  # noqa: F401  triggers tool registration
 from mcp_server.auth import verify_request
 from mcp_server.registry import REGISTRY, call_tool, list_tools
+from sqlalchemy import select
+from app.agents.models.mcp_token import McpTokenRevocation
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,12 @@ async def mcp(request: Request) -> JSONResponse:
             content={"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": str(detail)}},
         )
 
+    if ctx.jti:
+        async with async_session_maker() as session:
+            revoked = await session.scalar(select(McpTokenRevocation.id).where(McpTokenRevocation.jti == ctx.jti))
+        if revoked is not None:
+            return JSONResponse(status_code=401, content={"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": "token revoked"}})
+
     try:
         body = await request.json()
     except Exception:
@@ -83,7 +91,7 @@ async def mcp(request: Request) -> JSONResponse:
         )
 
     if method == "tools/list":
-        return JSONResponse(content=_ok(req_id, {"tools": list_tools()}))
+        return JSONResponse(content=_ok(req_id, {"tools": list_tools(ctx)}))
 
     if method == "tools/call":
         name = params.get("name")

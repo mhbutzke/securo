@@ -27,6 +27,8 @@ class TransactionBase(BaseModel):
 class TransactionCreate(TransactionBase):
     account_id: uuid.UUID
     category_id: Optional[uuid.UUID] = None
+    category_origin: Optional[str] = None
+    category_rule_id: Optional[uuid.UUID] = None
     payee_id: Optional[uuid.UUID] = None
     currency: Optional[str] = None
     notes: Optional[str] = None

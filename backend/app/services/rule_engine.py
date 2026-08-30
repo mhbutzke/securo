@@ -212,7 +212,10 @@ def apply_rule_actions(
                 continue
             if hidden_category_ids and category_id in hidden_category_ids:
                 continue
-            tx.category_id = category_id
+            from app.services.category_assignment import assign_category
+
+            if not assign_category(tx, category_id, origin="rule"):
+                continue
             category_already_set = True
 
         elif op == "set_description":

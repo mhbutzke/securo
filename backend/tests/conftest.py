@@ -62,6 +62,8 @@ from app.models.credit_card_bill import CreditCardBill  # noqa: E402,F401
 from app.models.group import Group, GroupMember  # noqa: E402,F401
 from app.models.transaction_split import TransactionSplit  # noqa: E402,F401
 from app.models.group_settlement import GroupSettlement  # noqa: E402,F401
+from app.models.correction_batch import CorrectionBatch, CorrectionBatchItem  # noqa: E402,F401
+from app.models.position import Position, PositionMovement  # noqa: E402,F401
 from app.models.workspace import Workspace, WorkspaceMember  # noqa: E402,F401
 # Agent models — gated by AGENTS_ENABLED above so tests always cover them.
 from app.agents.models import (  # noqa: E402,F401
@@ -72,6 +74,7 @@ from app.agents.models import (  # noqa: E402,F401
     KnowledgeDoc,
     KnowledgeChunk,
     LlmUsage,
+    McpTokenRevocation,
 )
 
 # Use SQLite for tests — fast, no external dependency.

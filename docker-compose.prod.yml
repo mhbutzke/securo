@@ -67,7 +67,7 @@ x-backend-env: &backend-env
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
 
 x-backend-base: &backend-base
-  image: ghcr.io/securo-finance/securo-backend:latest
+  image: ghcr.io/securo-finance/securo-backend@sha256:e8fe002e1c016b700764079188e13fd9d9f2a4ead6566c4cb829a82582b0503b
   environment: *backend-env
   # Lets a connection point at a model server running on the host (LM Studio,
   # Ollama, llama.cpp) as http://host.docker.internal:<port>. Docker Desktop
@@ -86,7 +86,7 @@ x-backend-base: &backend-base
 
 services:
   redis:
-    image: docker.io/library/redis:8-alpine
+    image: docker.io/library/redis@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
@@ -98,7 +98,7 @@ services:
     # docker.io/pgvector/pgvector:pg16 is a drop-in replacement for postgres:16
     # that bundles the pgvector extension, required by the agents
     # knowledge-base (RAG) migration introduced in v0.11.0.
-    image: ${DB_IMAGE:-docker.io/pgvector/pgvector:pg16}
+    image: ${DB_IMAGE:-docker.io/pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b}
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -114,14 +114,14 @@ services:
 
   backend:
     <<: *backend-base
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
   frontend:
-    image: ghcr.io/securo-finance/securo-frontend:latest
+    image: ghcr.io/securo-finance/securo-frontend@sha256:4e3ebd56aa697d6b183dec14c70417e11ba71d8892639f69323c33d234bbbc6a
     ports:
-      - "${FRONTEND_PORT:-3000}:8080"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000

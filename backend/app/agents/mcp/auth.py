@@ -22,6 +22,8 @@ def mint_token(
     agent_id: Optional[uuid.UUID] = None,
     ttl_seconds: Optional[int] = None,
     external: bool = False,
+    scopes: Optional[list[str]] = None,
+    audience: str = JWT_AUDIENCE,
 ) -> str:
     """Mint an MCP JWT scoped to a (user, workspace) pair.
 
@@ -33,12 +35,20 @@ def mint_token(
     """
     s = get_agent_settings()
     now = int(time.time())
+    if audience != JWT_AUDIENCE:
+        raise ValueError("Unsupported MCP audience")
+    normalized_scopes = sorted(set(scopes or (["read"] if external else ["read", "write"])))
+    if not set(normalized_scopes).issubset({"read", "write"}) or not normalized_scopes:
+        raise ValueError("MCP scopes must be read and/or write")
     payload = {
         "sub": str(user_id),
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "iat": now,
         "exp": now + (ttl_seconds or s.mcp_jwt_ttl_seconds),
+        "jti": str(uuid.uuid4()),
+        "scopes": normalized_scopes,
+        "aud": audience,
     }
     if workspace_id:
         payload["ws_id"] = str(workspace_id)

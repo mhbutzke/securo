@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, delete, select, func, or_, not_, update
+from sqlalchemy import delete, select, func, or_, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +33,7 @@ from app.services._query_filters import (
     reporting_date_col,
 )
 from app.services.recurring_transaction_service import _advance_date
+from app.services.category_assignment import assign_category
 
 
 async def _ensure_category_in_workspace(
@@ -714,6 +715,7 @@ async def create_transaction(
         workspace_id=workspace_id,
         account_id=data.account_id,
         category_id=data.category_id,  # use provided category if given
+        category_origin="manual" if data.category_id is not None else None,
         payee_id=data.payee_id,
         description=data.description,
         amount=data.amount,
@@ -1398,6 +1400,16 @@ async def _apply_update_to_row(
     if description_changed:
         tx.description_is_rule_managed = False
 
+    # Category edits are always explicit user decisions. Clearing the field
+    # removes ownership so the next automatic pass may classify it again.
+    if "category_id" in update_data:
+        assign_category(
+            tx,
+            update_data["category_id"],
+            origin="manual" if update_data["category_id"] is not None else None,
+        )
+        update_data = {k: v for k, v in update_data.items() if k != "category_id"}
+
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
         if key in fx_keys:
@@ -1444,7 +1456,13 @@ async def _apply_update_to_row(
         paired_tx = paired.scalar_one_or_none()
         if paired_tx:
             if should_cascade_category:
-                paired_tx.category_id = tx.category_id
+                assign_category(
+                    paired_tx,
+                    tx.category_id,
+                    origin=getattr(tx, "category_origin", None),
+                    rule_id=getattr(tx, "category_rule_id", None),
+                    force_manual=True,
+                )
             # When the user typed both amounts, neither is a conversion of the
             # other: correcting one leg leaves the amount that actually landed
             # on the other account untouched. Re-converting here would throw
@@ -1610,15 +1628,16 @@ async def bulk_update_category(
 ) -> int:
     await _ensure_category_in_workspace(session, workspace_id, category_id)
     result = await session.execute(
-        update(Transaction)
-        .where(
+        select(Transaction).where(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
-        .values(category_id=category_id)
     )
+    rows = result.scalars().all()
+    for tx in rows:
+        assign_category(tx, category_id, origin="manual" if category_id is not None else None)
     await session.commit()
-    return cast(CursorResult, result).rowcount
+    return len(rows)
 
 
 _TAG_CHAR_CLASS = r"[\wÀ-ž-]"
