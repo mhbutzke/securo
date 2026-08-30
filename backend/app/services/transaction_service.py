@@ -1402,6 +1402,7 @@ async def _apply_update_to_row(
 
     # Category edits are always explicit user decisions. Clearing the field
     # removes ownership so the next automatic pass may classify it again.
+    category_was_updated = "category_id" in update_data
     if "category_id" in update_data:
         assign_category(
             tx,
@@ -1445,7 +1446,7 @@ async def _apply_update_to_row(
 
     # Cascade changes to paired transfer transaction
     cascade_fields = {"amount", "date", "description", "notes"}
-    should_cascade_category = apply_to_transfer_pair and "category_id" in update_data
+    should_cascade_category = apply_to_transfer_pair and category_was_updated
     if tx.transfer_pair_id and ((cascade_fields & update_data.keys()) or should_cascade_category):
         paired = await session.execute(
             select(Transaction).where(
