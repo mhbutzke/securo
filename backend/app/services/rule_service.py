@@ -1269,6 +1269,7 @@ def _safe_rule_input_state(tx: Transaction) -> dict:
     return {
         "description": tx.description,
         "original_description": tx.original_description,
+        "payee": tx.payee,
         "notes": tx.notes,
         "amount": tx.amount,
         "type": tx.type,
