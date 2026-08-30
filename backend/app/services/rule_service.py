@@ -1656,6 +1656,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
     count = 0
     for tx in transactions:
         preserve_manual_description = _has_manual_description(tx)
+        manual_category = getattr(tx, "category_origin", None) == "manual"
         before = (
             tx.category_id,
             tx.payee_id,
@@ -1676,13 +1677,19 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, tx):
                 if not matched:
-                    tx.category_id = None
-                    tx.notes = None
+                    # Keep explicit user choices intact even on the legacy
+                    # endpoint. Automatic categories may be recalculated, but
+                    # a manual category (and its notes) is never cleared.
+                    if not manual_category:
+                        tx.category_id = None
+                        tx.category_origin = None
+                        tx.category_rule_id = None
+                        tx.notes = None
                     matched = True
                 category_set = apply_rule_actions(
                     actions,
                     tx,
-                    category_set,
+                    category_set or manual_category,
                     skip_description=preserve_manual_description,
                     hidden_category_ids=hidden_categories,
                 )
