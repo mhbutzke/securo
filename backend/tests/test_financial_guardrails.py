@@ -1,10 +1,12 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from app.models.account import Account
+from app.models.bank_connection import BankConnection
+from app.models.position import Position, PositionMovement
 from app.models.transaction import Transaction
 from app.schemas.position import PositionCreate, PositionMovementCreate
 from app.services.category_assignment import assign_category
@@ -65,6 +67,69 @@ async def test_financial_close_excludes_transfers_and_returns_null_savings_witho
     assert snapshot["transfers_and_patrimonial_movements"] == Decimal("90")
     assert snapshot["consumption_recurring"] == Decimal("0")
     assert snapshot["savings_rate"] is None
+    assert snapshot["portfolio_withdrawal_net"] is None
+    assert snapshot["metric_quality"]["portfolio_withdrawal_net"]["status"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_financial_close_uses_latest_sync_as_cutoff(session, test_user, test_workspace):
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Cash", type="checking",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    session.add(BankConnection(
+        user_id=test_user.id, workspace_id=test_workspace.id, provider="pluggy",
+        external_id="item-1", institution_name="Test bank",
+        last_sync_at=datetime(2026, 1, 15, 12, tzinfo=timezone.utc),
+    ))
+    await session.flush()
+    session.add_all([
+        Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+            description="Before cutoff", amount=Decimal("10"), date=date(2026, 1, 10),
+            type="debit", source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+            description="After cutoff", amount=Decimal("100"), date=date(2026, 1, 20),
+            type="debit", source="manual",
+        ),
+    ])
+    await session.commit()
+
+    snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
+
+    assert snapshot["cutoff_date"] == "2026-01-15"
+    assert snapshot["cutoff_source"] == "last_sync"
+    assert snapshot["sync_is_stale"] is True
+    assert snapshot["consumption_recurring"] == Decimal("10")
+
+
+@pytest.mark.asyncio
+async def test_financial_close_excludes_position_movements_after_cutoff(session, test_user, test_workspace):
+    position = Position(
+        user_id=test_user.id, workspace_id=test_workspace.id, side="receivable",
+        name="Receivable", currency="BRL", original_principal=Decimal("100"),
+        start_date=date(2026, 1, 1), liquidity="illiquid", status="open",
+    )
+    session.add(position)
+    await session.flush()
+    session.add_all([
+        PositionMovement(
+            position_id=position.id, kind="opening", principal_amount=Decimal("100"),
+            effective_date=date(2026, 1, 1), idempotency_key="opening",
+        ),
+        PositionMovement(
+            position_id=position.id, kind="increase", principal_amount=Decimal("50"),
+            effective_date=date(2026, 2, 1), idempotency_key="increase",
+        ),
+    ])
+    await session.commit()
+
+    snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
+
+    assert snapshot["receivables"] == Decimal("100")
 
 
 @pytest.mark.asyncio
