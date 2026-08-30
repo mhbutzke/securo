@@ -1,11 +1,12 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.credit_card_bill import CreditCardBill
 from app.models.position import Position, PositionMovement
 from app.models.transaction import Transaction
 from app.schemas.position import PositionCreate, PositionMovementCreate
@@ -130,6 +131,83 @@ async def test_financial_close_excludes_position_movements_after_cutoff(session,
     snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
 
     assert snapshot["receivables"] == Decimal("100")
+
+
+@pytest.mark.asyncio
+async def test_financial_close_keeps_position_until_reversal_date(session, test_user, test_workspace):
+    position = Position(
+        user_id=test_user.id, workspace_id=test_workspace.id, side="receivable",
+        name="Receivable", currency="BRL", original_principal=Decimal("100"),
+        start_date=date(2026, 1, 1), liquidity="illiquid", status="open",
+    )
+    session.add(position)
+    await session.flush()
+    session.add(PositionMovement(
+        position_id=position.id, kind="opening", principal_amount=Decimal("100"),
+        effective_date=date(2026, 1, 1), idempotency_key="opening",
+        reversed_at=datetime(2026, 2, 2, tzinfo=timezone.utc),
+    ))
+    await session.commit()
+
+    january = await build_snapshot(session, test_workspace.id, "2026-01")
+    february = await build_snapshot(session, test_workspace.id, "2026-02")
+
+    assert january["receivables"] == Decimal("100")
+    assert february["receivables"] == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_financial_close_does_not_count_card_bill_credit_as_income(session, test_user, test_workspace):
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Card", type="credit_card",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    bill = CreditCardBill(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        external_id="bill-1", due_date=date(2026, 1, 31), total_amount=Decimal("20"),
+    )
+    session.add(bill)
+    await session.flush()
+    session.add(Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        bill_id=bill.id, description="Bill credit", amount=Decimal("20"),
+        date=date(2026, 1, 20), type="credit", source="pluggy",
+    ))
+    await session.commit()
+
+    snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
+
+    assert snapshot["income_economic"] == Decimal("0")
+    assert snapshot["transfers_and_patrimonial_movements"] == Decimal("20")
+
+
+@pytest.mark.asyncio
+async def test_financial_close_clamps_future_period_without_sync(session, test_user, test_workspace):
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Cash", type="checking",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    session.add(BankConnection(
+        user_id=test_user.id, workspace_id=test_workspace.id, provider="pluggy",
+        external_id="item-no-sync", institution_name="Test bank", status="active",
+    ))
+    await session.flush()
+    future_date = date.today() + timedelta(days=30)
+    session.add(Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        description="Future", amount=Decimal("100"), date=future_date,
+        type="debit", source="manual",
+    ))
+    await session.commit()
+
+    snapshot = await build_snapshot(session, test_workspace.id, future_date.strftime("%Y-%m"))
+
+    assert snapshot["cutoff_source"] == "no_sync"
+    assert snapshot["sync_is_stale"] is True
+    assert snapshot["consumption_recurring"] == Decimal("0")
 
 
 @pytest.mark.asyncio

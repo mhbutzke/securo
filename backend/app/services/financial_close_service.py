@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 import uuid
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +16,32 @@ from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.position import Position
 from app.models.transaction import Transaction
+from app.services.dashboard_service import _account_balance_at
+
+
+async def _snapshot_account_balance(
+    session: AsyncSession, account: Account, cutoff: date
+) -> Decimal:
+    """Return an account balance that is consistent with the close cutoff.
+
+    Connected accounts can be reconstructed from the provider's current
+    balance and posted activity after the cutoff. Manual accounts without any
+    ledger rows keep their explicitly entered balance; once rows exist, the
+    ledger is authoritative for historical snapshots.
+    """
+    if account.connection_id:
+        balance = await _account_balance_at(session, account, cutoff)
+        return Decimal(str(balance))
+
+    has_transactions = await session.scalar(
+        select(Transaction.id)
+        .where(Transaction.account_id == account.id)
+        .limit(1)
+    )
+    if has_transactions is None:
+        return Decimal(str(account.balance or 0))
+    balance = await _account_balance_at(session, account, cutoff)
+    return Decimal(str(balance))
 
 
 async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period: str) -> dict:
@@ -25,17 +51,41 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     except (ValueError, TypeError):
         raise ValueError("period must be YYYY-MM")
     end = date(year, month, monthrange(year, month)[1])
-    latest_sync_at = await session.scalar(
-        select(func.max(BankConnection.last_sync_at)).where(
+    connection_rows = await session.execute(
+        select(BankConnection.status, BankConnection.last_sync_at).where(
             BankConnection.workspace_id == workspace_id,
         )
     )
-    latest_sync_date = latest_sync_at.date() if latest_sync_at is not None else None
-    cutoff = min(end, latest_sync_date) if latest_sync_date is not None else end
-    sync_is_stale = latest_sync_date is None or latest_sync_date < end
-    cutoff_source = "last_sync" if latest_sync_date is not None and latest_sync_date < end else "period_end"
+    connections = connection_rows.all()
+    active_connections = [row for row in connections if row.status == "active"]
+    sync_dates = [row.last_sync_at.date() for row in active_connections if row.last_sync_at is not None]
+    latest_sync_at = max(
+        (row.last_sync_at for row in active_connections if row.last_sync_at is not None),
+        default=None,
+    )
+    # Use the oldest active connection's sync date so a fresh connection does
+    # not make stale data from another account appear reconciled. A workspace
+    # with no active connections is manual-only and needs no sync gate. An
+    # active connection with no sync is clamped to today for future periods.
+    if sync_dates:
+        sync_cutoff = min(sync_dates)
+    elif active_connections:
+        sync_cutoff = date.today()
+    else:
+        sync_cutoff = None
+    cutoff = min(end, sync_cutoff) if sync_cutoff is not None else end
+    sync_is_stale = bool(active_connections) and (not sync_dates or min(sync_dates) < end)
+    if not active_connections:
+        cutoff_source = "period_end"
+    elif not sync_dates:
+        cutoff_source = "no_sync"
+    elif min(sync_dates) < end:
+        cutoff_source = "last_sync"
+    else:
+        cutoff_source = "period_end"
     tx_result = await session.execute(
-        select(Transaction, Category.treat_as_transfer, Category.is_ignored)
+        select(Transaction, Account.type, Category.treat_as_transfer, Category.is_ignored)
+        .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(Transaction.workspace_id == workspace_id, Transaction.date >= start, Transaction.date <= cutoff)
         .order_by(Transaction.date, Transaction.id)
@@ -44,12 +94,20 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     consumption = Decimal("0")
     transfers = Decimal("0")
     ignored = Decimal("0")
-    for tx, as_transfer, category_ignored in tx_result.all():
+    for tx, account_type, as_transfer, category_ignored in tx_result.all():
         amount = abs(Decimal(str(tx.amount or 0)))
         if tx.is_ignored or category_ignored:
             ignored += amount
             continue
-        if tx.transfer_pair_id is not None or as_transfer:
+        # A credit posted to a card bill is a settlement/credit adjustment,
+        # never economic income. Keep it in the transfer bucket so paying the
+        # bill cannot create a second income/expense event.
+        is_card_settlement = (
+            account_type == "credit_card"
+            and tx.type == "credit"
+            and tx.bill_id is not None
+        )
+        if tx.transfer_pair_id is not None or as_transfer or is_card_settlement:
             transfers += amount
             continue
         if tx.type == "credit":
@@ -58,9 +116,11 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             consumption += amount
 
     account_rows = await session.execute(
-        select(Account.currency, Account.balance).where(Account.workspace_id == workspace_id, Account.is_closed == False)
+        select(Account).where(Account.workspace_id == workspace_id, Account.is_closed == False)
     )
-    account_balance = sum((Decimal(str(row.balance or 0)) for row in account_rows.all()), Decimal("0"))
+    account_balance = Decimal("0")
+    for account in account_rows.scalars().all():
+        account_balance += await _snapshot_account_balance(session, account, cutoff)
 
     assets = await session.scalars(select(Asset).where(Asset.workspace_id == workspace_id, Asset.is_archived == False))
     asset_total = Decimal("0")
@@ -85,7 +145,8 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         principal = sum(
             (m.principal_amount if m.kind in ("opening", "increase") else -m.principal_amount
              for m in position.movements
-             if m.reversed_at is None and m.effective_date <= cutoff), Decimal("0")
+             if m.effective_date <= cutoff
+             and (m.reversed_at is None or m.reversed_at.date() > cutoff)), Decimal("0")
         )
         side = position.side
         if side == "receivable":
