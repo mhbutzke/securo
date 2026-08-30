@@ -1669,6 +1669,7 @@ async def apply_single_rule(
     can still find transactions they previously changed. A description the user
     typed themselves is left alone, exactly as `apply_all_rules` leaves it.
     """
+    await _lock_rule_workspace(session, workspace_id)
     if not rule.is_active:
         return 0
 
@@ -1732,6 +1733,7 @@ async def apply_single_rule(
 
 async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     """Reset rule-managed fields and reapply active rules in priority order."""
+    await _lock_rule_workspace(session, workspace_id)
     result = await session.execute(
         select(Transaction).where(
             Transaction.workspace_id == workspace_id,
