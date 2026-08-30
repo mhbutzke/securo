@@ -211,6 +211,8 @@ class RuleApplyPreviewRequest(BaseModel):
     def validate_period(self):
         if self.to_date < self.from_date:
             raise ValueError("to_date must be on or after from_date")
+        if self.transaction_ids is not None and not self.transaction_ids:
+            raise ValueError("transaction_ids cannot be empty when provided")
         invalid = set(self.origins) - {"uncategorized", "legacy", "provider", "rule", "system"}
         if invalid:
             raise ValueError("origins may only contain uncategorized, legacy, provider, rule or system")
@@ -237,11 +239,7 @@ class RuleApplyPreviewResponse(BaseModel):
 
 
 class RuleApplyCommitRequest(RuleApplyPreviewRequest):
-    @model_validator(mode="after")
-    def reject_empty_transaction_selection(self):
-        if self.transaction_ids is not None and not self.transaction_ids:
-            raise ValueError("transaction_ids cannot be empty when provided")
-        return self
+    pass
 
 
 class RuleApplyCommitResponse(BaseModel):

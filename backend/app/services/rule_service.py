@@ -5,9 +5,9 @@ import uuid
 from datetime import date
 from typing import Any, Optional, cast
 
-from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 from app.models.rule import Rule
@@ -52,6 +52,15 @@ _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
 }
 _MAX_CORRECTION_BATCH_SIZE = 20
+
+
+async def _lock_rule_workspace(session: AsyncSession, workspace_id: uuid.UUID) -> None:
+    """Serialize rule mutations and safe correction commits per workspace."""
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+    lock_key = int.from_bytes(workspace_id.bytes[:8], "big", signed=True)
+    await session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
 
 
 def _rule_item_value(item, key: str):
@@ -642,6 +651,8 @@ async def create_default_rules(
     category resolution — categories are matched by internal key across all
     language variants.
     """
+    if workspace_id is not None:
+        await _lock_rule_workspace(session, workspace_id)
     # Scope category resolution to the target workspace so rules in a
     # newly-created workspace point at THAT workspace's categories
     # rather than the user's first workspace.
@@ -831,6 +842,9 @@ async def install_rule_pack(
         # the workspace-scoped signature, so this argument is the user id.
         user_id = cast(uuid.UUID, user_id_or_pack_code)
 
+    if workspace_id is not None:
+        await _lock_rule_workspace(session, workspace_id)
+
     pack = RULE_PACKS.get(pack_code)
     if not pack:
         return RulePackInstallResult([], 0)
@@ -955,6 +969,7 @@ async def import_rules(
     `overwrite=True`. Rules whose `set_category` target cannot be matched by
     category name are skipped.
     """
+    await _lock_rule_workspace(session, workspace_id)
     existing = await get_rules(session, workspace_id)
     if existing and not overwrite:
         raise DuplicateRuleError("Import would overwrite existing rules")
@@ -1035,6 +1050,7 @@ async def create_rule(
     user_id: uuid.UUID,
     data: RuleCreate,
 ) -> Rule:
+    await _lock_rule_workspace(session, workspace_id)
     existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
     if data.name in existing_names:
         raise DuplicateRuleError(f"A rule named '{data.name}' already exists")
@@ -1060,6 +1076,7 @@ async def create_rule(
 async def update_rule(
     session: AsyncSession, rule_id: uuid.UUID, workspace_id: uuid.UUID, data: RuleUpdate
 ) -> Optional[Rule]:
+    await _lock_rule_workspace(session, workspace_id)
     rule = await get_rule(session, rule_id, workspace_id)
     if not rule:
         return None
@@ -1095,6 +1112,7 @@ async def update_rule(
 
 
 async def delete_rule(session: AsyncSession, rule_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
+    await _lock_rule_workspace(session, workspace_id)
     rule = await get_rule(session, rule_id, workspace_id)
     if not rule:
         return False
@@ -1409,6 +1427,7 @@ async def commit_safe_category_apply(
     digest: str, from_date: date, to_date: date, origins: list[str], limit: int = 500,
     transaction_ids: list[uuid.UUID] | None = None,
 ):
+    await _lock_rule_workspace(session, workspace_id)
     existing_result = await session.execute(
         select(CorrectionBatch)
         .options(selectinload(CorrectionBatch.items))

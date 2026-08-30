@@ -175,3 +175,40 @@ async def test_safe_rule_preview_rejects_more_than_20_selected_transactions(
     }
     response = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_safe_rule_commit_rejects_unbounded_batch_without_changes(
+    client, auth_headers, test_account, test_user, test_workspace, test_rules, session
+):
+    today = date.today()
+    transactions = [
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description=f"UBER BULK {index}",
+            amount=Decimal("10.00"),
+            date=today,
+            type="debit",
+            source="manual",
+        )
+        for index in range(21)
+    ]
+    session.add_all(transactions)
+    await session.commit()
+
+    body = {"from_date": today.isoformat(), "to_date": today.isoformat()}
+    preview = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
+    assert preview.status_code == 200
+    assert preview.json()["will_change"] == 21
+
+    commit = await client.post(
+        f"/api/rules/apply-preview/{preview.json()['digest']}/commit",
+        json=body,
+        headers=auth_headers,
+    )
+    assert commit.status_code == 409
+    await session.refresh(transactions[0])
+    assert transactions[0].category_origin is None
