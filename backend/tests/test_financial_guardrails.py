@@ -1,11 +1,13 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.category import Category
 from app.models.credit_card_bill import CreditCardBill
 from app.models.position import Position, PositionMovement
 from app.models.transaction import Transaction
@@ -13,6 +15,206 @@ from app.schemas.position import PositionCreate, PositionMovementCreate
 from app.services.category_assignment import assign_category
 from app.services.position_service import add_movement, create_position, position_balance, reverse_movement
 from app.services.financial_close_service import build_snapshot
+from app.services.period_cutoff import resolve_workspace_cutoff
+
+
+@pytest.mark.asyncio
+async def test_financial_review_queue_is_aggregate_first_and_read_only(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    transfer_category = Category(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Aplicações",
+        treat_as_transfer=True,
+    )
+    session.add(transfer_category)
+    await session.flush()
+    before = test_account.balance
+    session.add_all([
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description="High value pending",
+            amount=Decimal("5000"),
+            currency="BRL",
+            date=date(2026, 1, 5),
+            type="debit",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description="Small pending",
+            amount=Decimal("50"),
+            date=date(2026, 1, 6),
+            type="debit",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            category_id=transfer_category.id,
+            category_origin="rule",
+            description="Investment application",
+            amount=Decimal("300"),
+            date=date(2026, 1, 7),
+            type="debit",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            category_id=transfer_category.id,
+            description="Pending categorized charge",
+            amount=Decimal("20"),
+            date=date(2026, 1, 10),
+            type="debit",
+            status="pending",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            category_id=transfer_category.id,
+            transfer_pair_id=uuid.uuid4(),
+            description="Paired own transfer",
+            amount=Decimal("700"),
+            date=date(2026, 1, 8),
+            type="debit",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            is_ignored=True,
+            description="Ignored item",
+            amount=Decimal("80"),
+            date=date(2026, 1, 9),
+            type="debit",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description="Future forecast",
+            amount=Decimal("9999"),
+            date=date.today() + timedelta(days=1),
+            type="debit",
+            source="manual",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description="Opening balance",
+            amount=Decimal("10000"),
+            date=date(2026, 1, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+    ])
+    await session.commit()
+
+    local_today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    response = await client.get(
+        "/api/reports/financial-review-queue",
+        params={"from_date": "2026-01-01", "to_date": (local_today + timedelta(days=30)).isoformat()},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["cutoff_date"] == local_today.isoformat()
+    assert payload["total_count"] == 5
+    assert payload["summaries"]["high_value"]["count"] == 1
+    assert payload["summaries"]["uncategorized"]["count"] == 3
+    assert payload["summaries"]["third_party_transfers"]["count"] == 2
+    assert payload["summaries"]["ignored"]["count"] == 1
+    assert payload["summaries"]["pending"]["count"] == 1
+    assert payload["summaries"]["rule_managed"]["count"] == 1
+    assert payload["items"][0]["description"] == "High value pending"
+    assert all(item["description"] != "Future forecast" for item in payload["items"])
+    assert all(item["description"] != "Opening balance" for item in payload["items"])
+    assert test_account.balance == before
+
+    limited = await client.get(
+        "/api/reports/financial-review-queue",
+        params={
+            "from_date": "2026-01-01",
+            "to_date": local_today.isoformat(),
+            "queue": "high_value",
+            "limit": 20,
+        },
+        headers=auth_headers,
+    )
+    assert limited.status_code == 200
+    assert len(limited.json()["items"]) == 1
+
+    pending = await client.get(
+        "/api/reports/financial-review-queue",
+        params={
+            "from_date": "2026-01-01",
+            "to_date": local_today.isoformat(),
+            "queue": "pending",
+        },
+        headers=auth_headers,
+    )
+    assert pending.status_code == 200
+    assert pending.json()["total_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_financial_review_queue_is_workspace_scoped(
+    client, auth_headers, session, test_user, test_workspace
+):
+    from app.models.workspace import Workspace
+
+    other_workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Outra casa",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="BRL",
+        locale="pt-BR",
+    )
+    session.add(other_workspace)
+    await session.flush()
+    other_account = Account(
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Outra conta",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(other_account)
+    await session.flush()
+    session.add(Transaction(
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        account_id=other_account.id,
+        description="Other workspace",
+        amount=Decimal("10000"),
+        date=date(2026, 1, 2),
+        type="debit",
+        source="manual",
+    ))
+    await session.commit()
+
+    response = await client.get(
+        "/api/reports/financial-review-queue",
+        params={"from_date": "2026-01-01", "to_date": "2026-01-31"},
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+    )
+    assert response.status_code == 200
+    assert response.json()["total_count"] == 0
 
 
 def test_manual_category_ownership_survives_automatic_assignment():
@@ -108,6 +310,24 @@ async def test_financial_close_uses_latest_sync_as_cutoff(session, test_user, te
     assert snapshot["sync_is_stale"] is True
     assert snapshot["consumption_recurring"] == Decimal("10")
     assert snapshot["account_balance"] == Decimal("-10")
+
+
+@pytest.mark.asyncio
+async def test_cutoff_uses_workspace_timezone_at_utc_midnight(session, test_user, test_workspace):
+    session.add(BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-timezone",
+        institution_name="Test bank",
+        last_sync_at=datetime(2026, 2, 1, 2, 30, tzinfo=timezone.utc),
+    ))
+    await session.commit()
+
+    cutoff = await resolve_workspace_cutoff(session, test_workspace.id, date(2026, 2, 1))
+
+    assert cutoff.cutoff_date == date(2026, 1, 31)
+    assert cutoff.source == "last_sync"
 
 
 @pytest.mark.asyncio

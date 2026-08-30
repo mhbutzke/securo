@@ -12,11 +12,11 @@ from sqlalchemy.orm import selectinload
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
-from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.position import Position
 from app.models.transaction import Transaction
 from app.services.dashboard_service import _account_balance_at
+from app.services.period_cutoff import resolve_workspace_cutoff
 
 
 async def _snapshot_account_balance(
@@ -51,39 +51,11 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     except (ValueError, TypeError):
         raise ValueError("period must be YYYY-MM")
     end = date(year, month, monthrange(year, month)[1])
-    connection_rows = await session.execute(
-        select(BankConnection.status, BankConnection.last_sync_at).where(
-            BankConnection.workspace_id == workspace_id,
-        )
-    )
-    connections = connection_rows.all()
-    # A failed/expired connection still represents data in the workspace and
-    # must participate in the completeness gate until it is removed. Only
-    # explicit removal states are excluded.
-    gated_connections = [
-        row for row in connections if row.status not in {"removed", "deleted"}
-    ]
-    sync_dates = [row.last_sync_at.date() for row in gated_connections if row.last_sync_at is not None]
-    latest_sync_at = max(
-        (row.last_sync_at for row in gated_connections if row.last_sync_at is not None),
-        default=None,
-    )
-    # Use the oldest gated connection's sync date so a fresh connection does
-    # not make stale data from another account appear reconciled. A workspace
-    # with no connections is manual-only and needs no sync gate. A connection
-    # with no sync is clamped to today for future periods.
-    sync_cutoff = min(sync_dates) if sync_dates else date.today()
-    cutoff = min(end, sync_cutoff)
-    missing_sync = bool(gated_connections) and len(sync_dates) < len(gated_connections)
-    sync_is_stale = bool(gated_connections) and (missing_sync or min(sync_dates, default=end) < end)
-    if not gated_connections:
-        cutoff_source = "today" if end > date.today() else "period_end"
-    elif not sync_dates:
-        cutoff_source = "no_sync"
-    elif missing_sync or min(sync_dates) < end:
-        cutoff_source = "last_sync"
-    else:
-        cutoff_source = "period_end"
+    cutoff_info = await resolve_workspace_cutoff(session, workspace_id, end)
+    cutoff = cutoff_info.cutoff_date
+    cutoff_source = cutoff_info.source
+    latest_sync_at = cutoff_info.latest_sync_at
+    sync_is_stale = cutoff_info.sync_is_stale
     positions = await session.scalars(
         select(Position).options(selectinload(Position.movements)).where(
             Position.workspace_id == workspace_id, Position.is_archived == False
