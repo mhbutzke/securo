@@ -297,7 +297,8 @@ async def safe_apply_preview(
 ):
     """Preview category-only rule changes for a mandatory bounded period."""
     return await rule_service.preview_safe_category_apply(
-        session, ctx.workspace.id, data.from_date, data.to_date, data.origins, data.limit
+        session, ctx.workspace.id, data.from_date, data.to_date, data.origins, data.limit,
+        data.transaction_ids,
     )
 
 
@@ -316,7 +317,7 @@ async def safe_apply_commit(
     try:
         batch, applied = await rule_service.commit_safe_category_apply(
             session, ctx.workspace.id, ctx.user_id, digest,
-            data.from_date, data.to_date, data.origins, data.limit,
+            data.from_date, data.to_date, data.origins, data.limit, data.transaction_ids,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))

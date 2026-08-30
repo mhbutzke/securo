@@ -201,6 +201,11 @@ class RuleApplyPreviewRequest(BaseModel):
         description="Category owners eligible for replacement; manual is never eligible.",
     )
     limit: int = Field(default=100, ge=1, le=500)
+    transaction_ids: list[uuid.UUID] | None = Field(
+        default=None,
+        max_length=50,
+        description="Optional transaction IDs for a narrow, item-by-item correction batch.",
+    )
 
     @model_validator(mode="after")
     def validate_period(self):

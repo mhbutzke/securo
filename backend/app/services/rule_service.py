@@ -1271,6 +1271,7 @@ async def _safe_rule_snapshot(
     to_date: date,
     origins: list[str],
     limit: int = 100,
+    transaction_ids: list[uuid.UUID] | None = None,
 ) -> tuple[str, list[dict], int]:
     """Compute a deterministic category-only correction preview.
 
@@ -1278,15 +1279,16 @@ async def _safe_rule_snapshot(
     commit recomputes this exact snapshot, so edits made between preview and
     commit fail closed instead of applying to a moving ledger.
     """
+    filters = [
+        Transaction.workspace_id == workspace_id,
+        Transaction.source != "opening_balance",
+        Transaction.date >= from_date,
+        Transaction.date <= to_date,
+    ]
+    if transaction_ids is not None:
+        filters.append(Transaction.id.in_(transaction_ids))
     result = await session.execute(
-        select(Transaction)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.source != "opening_balance",
-            Transaction.date >= from_date,
-            Transaction.date <= to_date,
-        )
-        .order_by(Transaction.date, Transaction.id)
+        select(Transaction).where(*filters).order_by(Transaction.date, Transaction.id)
     )
     transactions = list(result.scalars().all())
     rules_result = await session.execute(
@@ -1343,6 +1345,7 @@ async def _safe_rule_snapshot(
     digest_payload = {
         "workspace_id": str(workspace_id), "from_date": from_date.isoformat(),
         "to_date": to_date.isoformat(), "origins": sorted(origins),
+        "transaction_ids": sorted(str(tx_id) for tx_id in transaction_ids) if transaction_ids is not None else None,
         "rules": rule_payload,
         "rows": [
             {"id": str(tx.id), "state": _safe_category_state(tx)}
@@ -1361,10 +1364,10 @@ async def _safe_rule_snapshot(
 
 async def preview_safe_category_apply(
     session: AsyncSession, workspace_id: uuid.UUID, from_date: date, to_date: date,
-    origins: list[str], limit: int = 100,
+    origins: list[str], limit: int = 100, transaction_ids: list[uuid.UUID] | None = None,
 ):
     digest, diffs, matched = await _safe_rule_snapshot(
-        session, workspace_id, from_date, to_date, origins, limit
+        session, workspace_id, from_date, to_date, origins, limit, transaction_ids
     )
     from app.schemas.rule import RuleApplyPreviewItem, RuleApplyPreviewResponse
     return RuleApplyPreviewResponse(
@@ -1382,9 +1385,10 @@ async def preview_safe_category_apply(
 async def commit_safe_category_apply(
     session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID,
     digest: str, from_date: date, to_date: date, origins: list[str], limit: int = 500,
+    transaction_ids: list[uuid.UUID] | None = None,
 ):
     current_digest, diffs, _ = await _safe_rule_snapshot(
-        session, workspace_id, from_date, to_date, origins, limit
+        session, workspace_id, from_date, to_date, origins, limit, transaction_ids
     )
     if current_digest != digest:
         raise ValueError("Preview is stale; refresh before committing")
