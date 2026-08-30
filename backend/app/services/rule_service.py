@@ -7,7 +7,7 @@ from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
 from app.models.rule import Rule
 from app.models.category import Category
@@ -1264,6 +1264,20 @@ def _safe_category_state(tx: Transaction) -> dict:
     }
 
 
+def _safe_rule_input_state(tx: Transaction) -> dict:
+    """Return every transaction field currently accepted by rule conditions."""
+    return {
+        "description": tx.description,
+        "original_description": tx.original_description,
+        "notes": tx.notes,
+        "amount": tx.amount,
+        "type": tx.type,
+        "account_id": tx.account_id,
+        "payee_id": tx.payee_id,
+        "date": tx.date,
+    }
+
+
 async def _safe_rule_snapshot(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1272,6 +1286,7 @@ async def _safe_rule_snapshot(
     origins: list[str],
     limit: int = 100,
     transaction_ids: list[uuid.UUID] | None = None,
+    lock_rows: bool = False,
 ) -> tuple[str, list[dict], int]:
     """Compute a deterministic category-only correction preview.
 
@@ -1287,9 +1302,10 @@ async def _safe_rule_snapshot(
     ]
     if transaction_ids is not None:
         filters.append(Transaction.id.in_(transaction_ids))
-    result = await session.execute(
-        select(Transaction).where(*filters).order_by(Transaction.date, Transaction.id)
-    )
+    query = select(Transaction).where(*filters).order_by(Transaction.date, Transaction.id)
+    if lock_rows:
+        query = query.with_for_update()
+    result = await session.execute(query)
     transactions = list(result.scalars().all())
     rules_result = await session.execute(
         select(Rule)
@@ -1348,7 +1364,7 @@ async def _safe_rule_snapshot(
         "transaction_ids": sorted(str(tx_id) for tx_id in transaction_ids) if transaction_ids is not None else None,
         "rules": rule_payload,
         "rows": [
-            {"id": str(tx.id), "state": _safe_category_state(tx)}
+            {"id": str(tx.id), "state": _safe_category_state(tx), "rule_inputs": _safe_rule_input_state(tx)}
             for tx in transactions
             if ((getattr(tx, "category_origin", None) in origins)
                 or (getattr(tx, "category_origin", None) is None and "uncategorized" in origins))
@@ -1387,8 +1403,20 @@ async def commit_safe_category_apply(
     digest: str, from_date: date, to_date: date, origins: list[str], limit: int = 500,
     transaction_ids: list[uuid.UUID] | None = None,
 ):
+    existing_result = await session.execute(
+        select(CorrectionBatch)
+        .options(selectinload(CorrectionBatch.items))
+        .where(
+            CorrectionBatch.workspace_id == workspace_id,
+            CorrectionBatch.operation == "rule_category_apply",
+            CorrectionBatch.digest == digest,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing is not None:
+        return existing, len(existing.items)
     current_digest, diffs, _ = await _safe_rule_snapshot(
-        session, workspace_id, from_date, to_date, origins, limit, transaction_ids
+        session, workspace_id, from_date, to_date, origins, limit, transaction_ids, lock_rows=True
     )
     if current_digest != digest:
         raise ValueError("Preview is stale; refresh before committing")

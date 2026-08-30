@@ -72,14 +72,18 @@ async def test_safe_rule_preview_commit_detects_drift_and_preserves_notes(
     client, auth_headers, test_transactions, test_categories, test_rules
 ):
     today = date.today()
-    body = {"from_date": today.replace(day=1).isoformat(), "to_date": today.isoformat()}
+    tx = test_transactions[0]
+    body = {
+        "from_date": today.replace(day=1).isoformat(),
+        "to_date": today.isoformat(),
+        "transaction_ids": [str(tx.id)],
+    }
     preview = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
     assert preview.status_code == 200
     digest = preview.json()["digest"]
     assert preview.json()["will_change"] >= 1
 
     # A manual category decision after preview invalidates the optimistic digest.
-    tx = test_transactions[-1]
     changed = await client.patch(
         f"/api/transactions/{tx.id}",
         json={"category_id": str(test_categories[0].id), "notes": "manual note"},
@@ -90,3 +94,84 @@ async def test_safe_rule_preview_commit_detects_drift_and_preserves_notes(
         f"/api/rules/apply-preview/{digest}/commit", json=body, headers=auth_headers
     )
     assert commit.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_safe_rule_preview_commit_can_target_selected_transactions_only(
+    client, auth_headers, test_transactions, test_rules, session
+):
+    today = date.today()
+    selected, outside = test_transactions[0], test_transactions[1]
+    body = {
+        "from_date": today.replace(day=1).isoformat(),
+        "to_date": today.isoformat(),
+        "transaction_ids": [str(selected.id)],
+    }
+
+    preview = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
+    assert preview.status_code == 200
+    assert preview.json()["matched"] == 1
+    assert preview.json()["will_change"] == 1
+    assert preview.json()["sample"][0]["id"] == str(selected.id)
+
+    commit = await client.post(
+        f"/api/rules/apply-preview/{preview.json()['digest']}/commit",
+        json=body,
+        headers=auth_headers,
+    )
+    assert commit.status_code == 200
+    assert commit.json()["applied"] == 1
+
+    await session.refresh(selected)
+    await session.refresh(outside)
+    assert selected.category_origin == "rule"
+    assert outside.category_origin is None
+
+    retry = await client.post(
+        f"/api/rules/apply-preview/{preview.json()['digest']}/commit",
+        json=body,
+        headers=auth_headers,
+    )
+    assert retry.status_code == 200
+    assert retry.json()["batch_id"] == commit.json()["batch_id"]
+    assert retry.json()["applied"] == 1
+
+
+@pytest.mark.asyncio
+async def test_safe_rule_preview_detects_rule_input_drift(client, auth_headers, test_transactions, test_rules):
+    today = date.today()
+    tx = test_transactions[0]
+    body = {
+        "from_date": today.replace(day=1).isoformat(),
+        "to_date": today.isoformat(),
+        "transaction_ids": [str(tx.id)],
+    }
+    preview = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
+    assert preview.status_code == 200
+
+    changed = await client.patch(
+        f"/api/transactions/{tx.id}",
+        json={"description": "MANUAL DESCRIPTION"},
+        headers=auth_headers,
+    )
+    assert changed.status_code == 200
+    commit = await client.post(
+        f"/api/rules/apply-preview/{preview.json()['digest']}/commit",
+        json=body,
+        headers=auth_headers,
+    )
+    assert commit.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_safe_rule_preview_rejects_more_than_50_selected_transactions(
+    client, auth_headers
+):
+    today = date.today()
+    body = {
+        "from_date": today.replace(day=1).isoformat(),
+        "to_date": today.isoformat(),
+        "transaction_ids": [str(uuid.uuid4()) for _ in range(51)],
+    }
+    response = await client.post("/api/rules/apply-preview", json=body, headers=auth_headers)
+    assert response.status_code == 422

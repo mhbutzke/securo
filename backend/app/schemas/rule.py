@@ -237,7 +237,11 @@ class RuleApplyPreviewResponse(BaseModel):
 
 
 class RuleApplyCommitRequest(RuleApplyPreviewRequest):
-    pass
+    @model_validator(mode="after")
+    def require_transaction_selection(self):
+        if not self.transaction_ids:
+            raise ValueError("transaction_ids is required when committing a correction batch")
+        return self
 
 
 class RuleApplyCommitResponse(BaseModel):
