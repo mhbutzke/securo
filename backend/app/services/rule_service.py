@@ -7,6 +7,7 @@ from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import load_only, selectinload
 
 from app.models.rule import Rule
@@ -1308,11 +1309,14 @@ async def _safe_rule_snapshot(
         query = query.with_for_update()
     result = await session.execute(query)
     transactions = list(result.scalars().all())
-    rules_result = await session.execute(
+    rules_query = (
         select(Rule)
         .where(Rule.workspace_id == workspace_id, Rule.is_active == True)
         .order_by(Rule.priority, Rule.id)
     )
+    if lock_rows:
+        rules_query = rules_query.with_for_update()
+    rules_result = await session.execute(rules_query)
     rules = list(rules_result.scalars().all())
     rule_payload = [
         {"id": str(r.id), "priority": r.priority, "conditions_op": r.conditions_op,
@@ -1420,13 +1424,47 @@ async def commit_safe_category_apply(
         session, workspace_id, from_date, to_date, origins, limit, transaction_ids, lock_rows=True
     )
     if current_digest != digest:
+        # A concurrent retry may have committed this exact digest while this
+        # request waited on the transaction locks. Return that winner instead
+        # of turning a successful retry into a misleading stale-preview error.
+        existing_result = await session.execute(
+            select(CorrectionBatch)
+            .options(selectinload(CorrectionBatch.items))
+            .where(
+                CorrectionBatch.workspace_id == workspace_id,
+                CorrectionBatch.operation == "rule_category_apply",
+                CorrectionBatch.digest == digest,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return existing, len(existing.items)
         raise ValueError("Preview is stale; refresh before committing")
     batch = CorrectionBatch(
         workspace_id=workspace_id, user_id=user_id, digest=digest,
         operation="rule_category_apply",
     )
     session.add(batch)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # The unique digest constraint makes concurrent retries converge on a
+        # single immutable batch. Recover the winner after rolling back this
+        # request's failed insert rather than surfacing a 500.
+        await session.rollback()
+        existing_result = await session.execute(
+            select(CorrectionBatch)
+            .options(selectinload(CorrectionBatch.items))
+            .where(
+                CorrectionBatch.workspace_id == workspace_id,
+                CorrectionBatch.operation == "rule_category_apply",
+                CorrectionBatch.digest == digest,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return existing, len(existing.items)
+        raise
     tx_ids = [d["id"] for d in diffs]
     if tx_ids:
         rows_result = await session.execute(select(Transaction).where(Transaction.id.in_(tx_ids), Transaction.workspace_id == workspace_id))
