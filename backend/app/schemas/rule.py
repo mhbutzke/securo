@@ -211,8 +211,8 @@ class RuleApplyPreviewRequest(BaseModel):
     def validate_period(self):
         if self.to_date < self.from_date:
             raise ValueError("to_date must be on or after from_date")
-        if self.transaction_ids is not None and not self.transaction_ids:
-            raise ValueError("transaction_ids cannot be empty when provided")
+        if not self.transaction_ids:
+            raise ValueError("transaction_ids is required for item-by-item correction")
         invalid = set(self.origins) - {"uncategorized", "legacy", "provider", "rule", "system"}
         if invalid:
             raise ValueError("origins may only contain uncategorized, legacy, provider, rule or system")
