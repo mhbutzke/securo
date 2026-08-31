@@ -1006,3 +1006,48 @@ export interface ReportResponse {
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
 }
+
+export type FinancialReviewQueueName =
+  | 'all'
+  | 'pending'
+  | 'uncategorized'
+  | 'third_party_transfers'
+  | 'high_value'
+  | 'ignored'
+  | 'rule_managed'
+
+export interface FinancialReviewSummary {
+  count: number
+  total_amount: number
+}
+
+export interface FinancialReviewItem {
+  id: string
+  date: string
+  amount: number
+  currency: string
+  type: string
+  description: string
+  account_id: string
+  category_id: string | null
+  category_origin: string | null
+  reason: Exclude<FinancialReviewQueueName, 'all'>
+}
+
+export interface FinancialReviewQueueResponse {
+  workspace_id: string
+  queue: FinancialReviewQueueName
+  from_date: string
+  requested_to_date: string
+  cutoff_date: string
+  cutoff_source: 'period_end' | 'today' | 'last_sync' | 'no_sync'
+  latest_sync_at: string | null
+  sync_is_stale: boolean
+  limit: number
+  offset: number
+  total_count: number
+  total_amount: number
+  summaries: Record<Exclude<FinancialReviewQueueName, 'all'>, FinancialReviewSummary>
+  coverage_notes: Record<string, string>
+  items: FinancialReviewItem[]
+}

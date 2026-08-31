@@ -56,6 +56,8 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  FinancialReviewQueueName,
+  FinancialReviewQueueResponse,
   Group,
   GroupKind,
   GroupMember,
@@ -1280,6 +1282,18 @@ export const reports = {
   cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[]): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
+  financialReviewQueue: async (
+    fromDate: string,
+    toDate: string,
+    queue: FinancialReviewQueueName = 'all',
+    limit = 20,
+    offset = 0,
+  ): Promise<FinancialReviewQueueResponse> => {
+    const { data } = await api.get('/reports/financial-review-queue', {
+      params: { from_date: fromDate, to_date: toDate, queue, limit, offset },
+    })
     return data
   },
 }
