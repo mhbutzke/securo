@@ -84,9 +84,9 @@ function MetricCard({
           {rendered}
         </CardTitle>
       </CardHeader>
-      {quality && unavailable && (
+      {quality && (unavailable || quality.status !== 'available') && (
         <CardContent className="pt-0">
-          <p className="text-xs leading-relaxed text-muted-foreground">{quality.reason}</p>
+          <p className={`text-xs leading-relaxed ${quality.status === 'provisional' ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>{quality.reason}</p>
         </CardContent>
       )}
     </Card>
@@ -207,7 +207,7 @@ export default function FinancialClosePage() {
               <MetricCard label="Recebíveis" value={data.receivables} currency={currency} locale={locale} mask={mask} />
               <MetricCard label="Passivos" value={data.liabilities} currency={currency} locale={locale} mask={mask} />
               <MetricCard label="Patrimônio líquido consolidado" value={data.net_worth_consolidated} currency={currency} locale={locale} mask={mask} emphasis />
-              <MetricCard label="Carteira financeira líquida" value={data.financial_portfolio_net} currency={currency} locale={locale} mask={mask} emphasis />
+              <MetricCard label="Carteira financeira líquida (proxy)" value={data.financial_portfolio_net} currency={currency} locale={locale} mask={mask} quality={quality('financial_portfolio_net')} emphasis />
             </div>
           </section>
 

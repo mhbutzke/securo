@@ -165,6 +165,11 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     # is configured.
     portfolio_withdrawals = None
     savings_rate = None if income <= 0 else (income - consumption) / income
+    # Until the user explicitly configures the investible-portfolio lens, this
+    # is a broad proxy over all open accounts/assets. Keep the number available
+    # for continuity, but label it so downstream UI and narrators cannot pass
+    # it off as a true investible-portfolio balance.
+    financial_portfolio_net = account_balance + asset_total - liabilities
     return {
         "period": period,
         "as_of": cutoff.isoformat(),
@@ -186,7 +191,7 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         "receivables": receivables,
         "liabilities": liabilities,
         "net_worth_consolidated": account_balance + asset_total + receivables - liabilities,
-        "financial_portfolio_net": account_balance + asset_total - liabilities,
+        "financial_portfolio_net": financial_portfolio_net,
         "withdrawal_rate_12m": None,
         "liquidity_coverage": None,
         "metric_quality": {
@@ -202,6 +207,10 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
                 "status": "unavailable",
                 "reason": "Requires essential-expense categories and eligible D+0/D+1 assets.",
             },
+            "financial_portfolio_net": {
+                "status": "provisional",
+                "reason": "Proxy amplo: inclui todas as contas e ativos estruturais. Configure a Collection Carteira investível para separar a carteira financeira.",
+            },
         },
         "methodology": {
             "source": "Securo ledger, account balances, asset valuations and Position ledger",
@@ -210,5 +219,6 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             "savings_rate": "null when economic income is not positive",
             "principal_withdrawals": "excluded from economic income; linked cash legs are patrimonial transfers",
             "position_result": "interest increases/lowers result by side; fees and taxes are costs",
+            "financial_portfolio_net": "provisional proxy until the investible-portfolio Collection is configured",
         },
     }

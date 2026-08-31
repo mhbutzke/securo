@@ -39,6 +39,7 @@ async def test_financial_close_route_requires_auth_and_returns_contract(
     assert payload["cutoff_date"]
     assert payload["requested_period_end"] == "2026-01-31"
     assert payload["metric_quality"]["withdrawal_rate_12m"]["status"] == "unavailable"
+    assert payload["metric_quality"]["financial_portfolio_net"]["status"] == "provisional"
     assert "period_policy" in payload["methodology"]
 
 
