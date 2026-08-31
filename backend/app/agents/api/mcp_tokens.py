@@ -17,7 +17,6 @@ router isn't mounted at all so the endpoint 404s.
 """
 from __future__ import annotations
 
-import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -90,7 +89,11 @@ async def revoke_mcp_token(
 ):
     if len(jti) > 64:
         raise HTTPException(status_code=400, detail="Invalid token id")
-    existing = await session.scalar(select(McpTokenRevocation).where(McpTokenRevocation.jti == jti))
+    existing = await session.scalar(select(McpTokenRevocation).where(
+        McpTokenRevocation.jti == jti,
+        McpTokenRevocation.user_id == ctx.user_id,
+        McpTokenRevocation.workspace_id == ctx.workspace.id,
+    ))
     if existing is None:
         session.add(McpTokenRevocation(jti=jti, user_id=ctx.user_id, workspace_id=ctx.workspace.id))
         await session.commit()

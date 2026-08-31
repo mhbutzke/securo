@@ -34,7 +34,9 @@ class TaxIdInput(BaseModel):
 
 class TaxIdRead(BaseModel):
     kind: str
-    value: str
+    value: Optional[str] = None
+    last4: Optional[str] = None
+    fingerprint: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,6 +58,7 @@ class PayeeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     type: Optional[PayeeType] = None
     is_favorite: Optional[bool] = None
+    is_archived: Optional[bool] = None
     notes: Optional[str] = Field(None, max_length=1000)
     email: Optional[str] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=50)
@@ -75,6 +78,7 @@ class PayeeRead(BaseModel):
     # counterparties somebody entered on purpose from the hundreds sync
     # created from card descriptors.
     source: PayeeSource = "manual"
+    is_archived: bool = False
     is_favorite: bool
     notes: Optional[str] = None
     email: Optional[str] = None
@@ -100,6 +104,10 @@ class PayeeSummary(BaseModel):
 class PayeeMergeRequest(BaseModel):
     source_ids: list[uuid.UUID]
     target_id: uuid.UUID
+
+
+class PayeeMergeByTargetRequest(BaseModel):
+    source_ids: list[uuid.UUID]
 
 
 class PayeeBulkDeleteRequest(BaseModel):

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
@@ -107,6 +107,15 @@ def _decimal_or_none(value) -> Optional[Decimal]:
 def _date_or_none(value) -> Optional[date]:
     if not value:
         return None
+
+
+def _datetime_or_none(value) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
     try:
         return date.fromisoformat(str(value)[:10])
     except ValueError:
@@ -182,12 +191,27 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
     if not bill_id or due_date is None or total_amount is None:
         return None
 
+    paid_raw = raw.get("paidAmount") or raw.get("paymentAmount") or raw.get("amountPaid") or 0
+    paid_amount = _decimal_or_none(paid_raw) or Decimal("0")
+    raw_status = str(raw.get("status") or raw.get("state") or "").strip().lower()
+    if raw_status in {"paid", "settled", "pago", "liquidated"} or paid_amount >= total_amount > 0:
+        bill_status = "paid"
+    elif raw_status in {"overdue", "late", "vencida", "atrasada"}:
+        bill_status = "overdue"
+    elif raw_status in {"closed", "closed_bill", "fechada", "fechado"}:
+        bill_status = "closed"
+    else:
+        bill_status = "open"
     return BillData(
         external_id=str(bill_id),
         due_date=due_date,
         total_amount=total_amount,
         currency=raw.get("totalAmountCurrencyCode") or "BRL",
         minimum_payment=_decimal_or_none(raw.get("minimumPaymentAmount")),
+        status=bill_status,
+        paid_amount=max(paid_amount, Decimal("0")),
+        closed_at=_date_or_none(raw.get("closeDate") or raw.get("closingDate")),
+        source_updated_at=_datetime_or_none(raw.get("updatedAt") or raw.get("lastUpdatedAt")),
         raw_data=raw,
     )
 

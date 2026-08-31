@@ -54,6 +54,7 @@ class Payee(Base):
     # counterparties to bill needs to tell those apart from the handful
     # somebody typed in on purpose.
     source: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     # How to reach this counterparty. All nullable and all expected to stay
@@ -113,7 +114,12 @@ class PayeeTaxId(Base):
     # Normalised per kind on write: digits only for CPF/CNPJ, upper-cased
     # and stripped of separators for VAT-shaped ids. Formatting for display
     # is the frontend's job, driven by the pack's mask.
-    value: Mapped[str] = mapped_column(String(60))
+    # Legacy clear value is retained during the expand-only migration. New
+    # writes populate the versioned HMAC fingerprint and masked suffix.
+    value: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    fingerprint: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    last4: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
+    key_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

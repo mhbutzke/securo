@@ -85,6 +85,12 @@ class Asset(Base):
     # the type icon". Frontend swaps to the type icon on <img> load error.
     logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+    # Liquidity metadata is explicit: unknown assets must not silently count
+    # toward the emergency-reserve coverage metric.
+    liquidity_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reserve_eligible: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    risk_level: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+
     values: Mapped[list["AssetValue"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
     transactions: Mapped[list["AssetTransaction"]] = relationship(
         back_populates="asset", cascade="all, delete-orphan"

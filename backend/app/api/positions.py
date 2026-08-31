@@ -7,7 +7,7 @@ from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
 from app.schemas.position import (
     PositionCreate, PositionMovementCreate, PositionMovementRead, PositionRead,
-    PositionTransactionLinkCreate, PositionUpdate,
+    PositionTransactionLinkCreate, PositionUpdate, PositionValuationCreate, PositionValuationRead,
 )
 from app.services import position_service
 
@@ -83,3 +83,34 @@ async def reverse_movement(position_id: uuid.UUID, movement_id: uuid.UUID, ctx: 
     if movement is False:
         raise HTTPException(status_code=404, detail="Movement not found")
     return movement
+
+
+@router.post("/{position_id}/valuations", response_model=PositionValuationRead, status_code=status.HTTP_201_CREATED)
+async def create_valuation(
+    position_id: uuid.UUID,
+    data: PositionValuationCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        valuation = await position_service.add_valuation(session, ctx.workspace.id, position_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if valuation is None:
+        raise HTTPException(status_code=404, detail="Position not found")
+    return valuation
+
+
+@router.post("/{position_id}/valuations/{valuation_id}/reverse", response_model=PositionValuationRead)
+async def reverse_valuation(
+    position_id: uuid.UUID,
+    valuation_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    valuation = await position_service.reverse_valuation(session, ctx.workspace.id, position_id, valuation_id)
+    if valuation is None:
+        raise HTTPException(status_code=404, detail="Position not found")
+    if valuation is False:
+        raise HTTPException(status_code=404, detail="Valuation not found")
+    return valuation

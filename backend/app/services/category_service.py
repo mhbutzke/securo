@@ -41,6 +41,34 @@ DEFAULT_CATEGORIES_I18N = {
 }
 
 
+def _default_accounting_role(key: str, data: dict) -> str:
+    if data.get("treat_as_transfer"):
+        return "patrimonial"
+    if key in {"salary"}:
+        return "income"
+    if key in {"taxes"}:
+        return "financial_cost"
+    return "consumption"
+
+
+def _synchronise_accounting_flags(values: dict) -> dict:
+    role = values.get("accounting_role")
+    if role == "patrimonial":
+        values["treat_as_transfer"] = True
+        values["is_ignored"] = False
+    elif role == "ignored":
+        values["is_ignored"] = True
+        values["treat_as_transfer"] = False
+    elif role is not None:
+        values["treat_as_transfer"] = False
+        values["is_ignored"] = False
+    elif values.get("treat_as_transfer") is True:
+        values["accounting_role"] = "patrimonial"
+    elif values.get("is_ignored") is True:
+        values["accounting_role"] = "ignored"
+    return values
+
+
 async def create_default_categories(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -91,6 +119,7 @@ async def create_default_categories(
             is_system=True,
             group_id=group.id if group else None,
             treat_as_transfer=data.get("treat_as_transfer", False),
+            accounting_role=_default_accounting_role(key, data),
         )
         session.add(category)
         categories.append(category)
@@ -154,7 +183,7 @@ async def create_category(
     user_id: uuid.UUID,
     data: CategoryCreate,
 ) -> Category:
-    category = Category(user_id=user_id, workspace_id=workspace_id, **data.model_dump())
+    category = Category(user_id=user_id, workspace_id=workspace_id, **_synchronise_accounting_flags(data.model_dump()))
     session.add(category)
     await session.commit()
     await session.refresh(category)
@@ -214,7 +243,7 @@ async def update_category(
     if not category:
         return None
 
-    changes = data.model_dump(exclude_unset=True)
+    changes = _synchronise_accounting_flags(data.model_dump(exclude_unset=True))
     if changes.get("is_hidden") is True and not category.is_system:
         raise CategoryVisibilityError("Only system categories can be hidden")
 

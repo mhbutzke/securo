@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PositionCreate(BaseModel):
@@ -66,6 +66,7 @@ class PositionRead(PositionCreate):
     created_at: datetime
     balance: Decimal = Decimal("0")
     movements: list[PositionMovementRead] = []
+    valuations: list["PositionValuationRead"] = []
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -80,3 +81,27 @@ class PositionTransactionLinkCreate(BaseModel):
     fee_amount: Decimal = Decimal("0")
     tax_amount: Decimal = Decimal("0")
     fx_rate: Optional[Decimal] = None
+
+
+class PositionValuationCreate(BaseModel):
+    amount: Decimal
+    currency: str = Field(min_length=3, max_length=3)
+    base_amount: Optional[Decimal] = None
+    base_currency: str = Field(default="BRL", min_length=3, max_length=3)
+    fx_rate: Optional[Decimal] = None
+    valuation_date: date
+    basis: Literal["declared", "market", "appraisal", "provider", "derived"] = "declared"
+    source: str = Field(min_length=1, max_length=100)
+    confidence: Literal["low", "medium", "high"] = "low"
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class PositionValuationRead(PositionValuationCreate):
+    id: uuid.UUID
+    position_id: uuid.UUID
+    reversed_at: Optional[datetime] = None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+PositionRead.model_rebuild()

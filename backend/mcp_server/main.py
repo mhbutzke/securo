@@ -7,6 +7,9 @@ Model Context Protocol. Runs as a separate container; gated by the
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
+import time
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -16,8 +19,10 @@ from app.core.database import async_session_maker
 from mcp_server import tools as _tools_pkg  # noqa: F401  triggers tool registration
 from mcp_server.auth import verify_request
 from mcp_server.registry import REGISTRY, call_tool, list_tools
+from mcp_server.tools._helpers import resolve_workspace_id
 from sqlalchemy import select
 from app.agents.models.mcp_token import McpTokenRevocation
+from app.agents.models.mcp_audit import McpToolAudit
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +105,21 @@ async def mcp(request: Request) -> JSONResponse:
             return JSONResponse(content=_err(req_id, -32602, "tools/call requires 'name'"))
         try:
             async with async_session_maker() as session:
+                started = time.monotonic()
+                audit_workspace_id = await resolve_workspace_id(session, ctx)
                 result = await call_tool(session, ctx, name, arguments)
+                request_hash = hashlib.sha256(json.dumps(arguments, sort_keys=True, default=str).encode()).hexdigest()
+                session.add(McpToolAudit(
+                    user_id=ctx.user_id,
+                    workspace_id=audit_workspace_id,
+                    jti=ctx.jti,
+                    tool_name=name,
+                    access=REGISTRY[name].access if name in REGISTRY else "read",
+                    request_hash=request_hash,
+                    result_status="ok",
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ))
+                await session.commit()
             # MCP wraps tool output in `content` blocks. Use the structured
             # variant — many clients (and our own runtime) prefer JSON.
             return JSONResponse(content=_ok(req_id, {
@@ -111,6 +130,23 @@ async def mcp(request: Request) -> JSONResponse:
         except KeyError as exc:
             return JSONResponse(content=_err(req_id, -32601, str(exc)))
         except Exception as exc:  # noqa: BLE001
+            try:
+                async with async_session_maker() as audit_session:
+                    audit_workspace_id = await resolve_workspace_id(audit_session, ctx)
+                    request_hash = hashlib.sha256(json.dumps(arguments, sort_keys=True, default=str).encode()).hexdigest()
+                    audit_session.add(McpToolAudit(
+                        user_id=ctx.user_id,
+                        workspace_id=audit_workspace_id,
+                        jti=ctx.jti,
+                        tool_name=name if isinstance(name, str) else "unknown",
+                        access=REGISTRY[name].access if name in REGISTRY else "read",
+                        request_hash=request_hash,
+                        result_status="error",
+                        duration_ms=0,
+                    ))
+                    await audit_session.commit()
+            except Exception:
+                logger.exception("MCP audit write failed")
             logger.exception("MCP tool failure: %s", name)
             return JSONResponse(content=_ok(req_id, {
                 "content": [{"type": "text", "text": f"Tool error: {exc}"}],

@@ -958,10 +958,6 @@ export const rules = {
     const { data } = await api.post('/rules/preview', draft)
     return data
   },
-  applyAll: async (): Promise<{ applied: number }> => {
-    const { data } = await api.post('/rules/apply-all')
-    return data
-  },
   exportFile: async (): Promise<void> => {
     const { data } = await api.get('/rules/export', { responseType: 'blob' })
     const blob = new Blob([data], { type: 'application/json;charset=utf-8;' })

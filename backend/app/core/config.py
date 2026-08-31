@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     # Auth
     secret_key: SecretStr = SecretStr("change-me-in-production")
+    payee_tax_id_hmac_key: SecretStr = SecretStr("")
+    payee_tax_id_hmac_key_version: str = "v1"
     local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours

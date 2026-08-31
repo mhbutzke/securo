@@ -284,9 +284,15 @@ async def apply_all_rules(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Re-apply all active rules to all existing transactions."""
-    count = await rule_service.apply_all_rules(session, ctx.workspace.id)
-    return {"applied": count}
+    """Removed destructive bulk operation.
+
+    Clients must use the bounded preview/commit flow, which preserves manual
+    fields and detects ledger drift before writing.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Use /api/rules/apply-preview and commit its digest",
+    )
 
 
 @router.post("/apply-preview", response_model=RuleApplyPreviewResponse)

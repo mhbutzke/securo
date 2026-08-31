@@ -43,12 +43,11 @@ def mint_token(
     payload = {
         "sub": str(user_id),
         "iss": JWT_ISSUER,
-        "aud": JWT_AUDIENCE,
+        "aud": audience,
         "iat": now,
         "exp": now + (ttl_seconds or s.mcp_jwt_ttl_seconds),
         "jti": str(uuid.uuid4()),
         "scopes": normalized_scopes,
-        "aud": audience,
     }
     if workspace_id:
         payload["ws_id"] = str(workspace_id)

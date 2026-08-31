@@ -11,7 +11,15 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.payee import PayeeCreate, PayeeMergeRequest, PayeeRead, PayeeSummary, PayeeUpdate, PayeeBulkDeleteRequest
+from app.schemas.payee import (
+    PayeeBulkDeleteRequest,
+    PayeeCreate,
+    PayeeMergeByTargetRequest,
+    PayeeMergeRequest,
+    PayeeRead,
+    PayeeSummary,
+    PayeeUpdate,
+)
 from app.schemas.category import CategoryRead
 from app.services import payee_service
 
@@ -112,6 +120,23 @@ async def merge_payees(
 ):
     try:
         reassigned = await payee_service.merge_payees(session, ctx.workspace.id, data.target_id, data.source_ids)
+        return {"merged": len(data.source_ids), "transactions_reassigned": reassigned}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{payee_id}/merge")
+async def merge_payee_into_target(
+    payee_id: uuid.UUID,
+    data: PayeeMergeByTargetRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Path-oriented alias for clients that treat the target as a resource."""
+    try:
+        reassigned = await payee_service.merge_payees(
+            session, ctx.workspace.id, payee_id, data.source_ids
+        )
         return {"merged": len(data.source_ids), "transactions_reassigned": reassigned}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

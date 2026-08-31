@@ -53,6 +53,11 @@ function percentLabel(
   return mask(formatted)
 }
 
+function ratioLabel(value: number | null | undefined, locale: string, mask: (value: string) => string): string {
+  if (value == null) return 'indisponível'
+  return mask(`${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(value))}x`)
+}
+
 function MetricCard({
   label,
   value,
@@ -66,7 +71,7 @@ function MetricCard({
 }: {
   label: string
   value: number | null | undefined
-  kind?: 'currency' | 'percent'
+  kind?: 'currency' | 'percent' | 'ratio'
   currency: string
   locale: string
   mask: (value: string) => string
@@ -76,7 +81,9 @@ function MetricCard({
 }) {
   const rendered = kind === 'percent'
     ? percentLabel(value, locale, mask)
-    : currencyLabel(value, currency, locale, mask)
+    : kind === 'ratio'
+      ? ratioLabel(value, locale, mask)
+      : currencyLabel(value, currency, locale, mask)
   const unavailable = value == null
 
   return (
@@ -252,7 +259,10 @@ export default function FinancialClosePage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <MetricCard label="Retirada líquida" value={data.portfolio_withdrawal_net} currency={currency} locale={locale} mask={mask} quality={quality('portfolio_withdrawal_net')} />
               <MetricCard label="Taxa de retirada (12 meses)" value={data.withdrawal_rate_12m} kind="percent" currency={currency} locale={locale} mask={mask} quality={quality('withdrawal_rate_12m')} />
-              <MetricCard label="Cobertura de liquidez" value={data.liquidity_coverage} kind="percent" currency={currency} locale={locale} mask={mask} quality={quality('liquidity_coverage')} />
+              <MetricCard label="Cobertura de liquidez" value={data.liquidity_coverage} kind="ratio" currency={currency} locale={locale} mask={mask} quality={quality('liquidity_coverage')} />
+              <MetricCard label="TWR" value={data.twr} kind="percent" currency={currency} locale={locale} mask={mask} quality={quality('twr')} />
+              <MetricCard label="XIRR" value={data.xirr} kind="percent" currency={currency} locale={locale} mask={mask} quality={quality('xirr')} />
+              <MetricCard label="Custo essencial médio" value={data.essential_cost_average} currency={currency} locale={locale} mask={mask} />
             </div>
           </section>
 

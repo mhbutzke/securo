@@ -1540,6 +1540,10 @@ async def _sync_credit_card_bills(
                 total_amount=bd.total_amount,
                 currency=bd.currency,
                 minimum_payment=bd.minimum_payment,
+                status=bd.status,
+                paid_amount=bd.paid_amount,
+                closed_at=bd.closed_at,
+                source_updated_at=bd.source_updated_at,
                 raw_data=bd.raw_data,
             )
             session.add(bill)
@@ -1549,6 +1553,10 @@ async def _sync_credit_card_bills(
             bill.total_amount = bd.total_amount
             bill.currency = bd.currency
             bill.minimum_payment = bd.minimum_payment
+            bill.status = bd.status
+            bill.paid_amount = bd.paid_amount
+            bill.closed_at = bd.closed_at
+            bill.source_updated_at = bd.source_updated_at
             bill.raw_data = bd.raw_data
 
     await session.flush()

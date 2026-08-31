@@ -10,6 +10,8 @@ x-podman:
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+  PAYEE_TAX_ID_HMAC_KEY: ${PAYEE_TAX_ID_HMAC_KEY:-}
+  PAYEE_TAX_ID_HMAC_KEY_VERSION: ${PAYEE_TAX_ID_HMAC_KEY_VERSION:-v1}
   DEBUG: ${DEBUG:-false}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
@@ -67,13 +69,8 @@ x-backend-env: &backend-env
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
 
 x-backend-base: &backend-base
-  image: ghcr.io/securo-finance/securo-backend@sha256:e8fe002e1c016b700764079188e13fd9d9f2a4ead6566c4cb829a82582b0503b
+  image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be an immutable ghcr.io/mhbutzke/securo-backend digest}
   environment: *backend-env
-  # Lets a connection point at a model server running on the host (LM Studio,
-  # Ollama, llama.cpp) as http://host.docker.internal:<port>. Docker Desktop
-  # resolves the name on its own; this makes it work on Linux too.
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
   depends_on:
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -112,30 +109,50 @@ services:
       timeout: 3s
       retries: 5
 
+  migrate:
+    <<: *backend-base
+    command: alembic upgrade head
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+
   backend:
     <<: *backend-base
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
   frontend:
-    image: ghcr.io/securo-finance/securo-frontend@sha256:4e3ebd56aa697d6b183dec14c70417e11ba71d8892639f69323c33d234bbbc6a
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE must be an immutable ghcr.io/mhbutzke/securo-frontend digest}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
     depends_on:
-      - backend
+      backend: { condition: service_started }
+      migrate: { condition: service_completed_successfully }
     restart: unless-stopped
 
   celery-worker:
     <<: *backend-base
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     # Limit to 2 workers to save RAM (default = number of CPUs).
     command: celery -A app.worker worker --loglevel=info --concurrency=2
 
   celery-beat:
     <<: *backend-base
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     command: celery -A app.worker beat --loglevel=info
 
   # Optional: Securo built-in MCP server. Only starts under the `agents`

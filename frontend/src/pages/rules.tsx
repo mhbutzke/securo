@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
 import { isConditionGroup } from '@/lib/rule-conditions'
-import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
+import { Trash2, Plus, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -249,16 +249,6 @@ export default function RulesPage() {
     },
   })
 
-  const applyAllMutation = useMutation({
-    mutationFn: () => rulesApi.applyAll(),
-    onSuccess: (data) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['payees'] })
-      toast.success(t('rules.applied', { count: data.applied }))
-    },
-    onError: () => toast.error(t('common.error')),
-  })
-
   const exportMutation = useMutation({
     mutationFn: () => rulesApi.exportFile(),
     onSuccess: () => toast.success(t('rules.exported')),
@@ -368,20 +358,6 @@ export default function RulesPage() {
                 >
                   <Package size={12} />
                   <span className="hidden sm:inline">{t('rules.packs')}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8"
-                  onClick={() => {
-                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?'))) {
-                      applyAllMutation.mutate()
-                    }
-                  }}
-                  disabled={applyAllMutation.isPending}
-                >
-                  <RefreshCw size={12} />
-                  <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
                 </Button>
                 <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
                   <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>

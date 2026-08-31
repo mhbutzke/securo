@@ -1,9 +1,11 @@
+import hashlib
+import hmac
 import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, case, select, func, update, delete
+from sqlalchemy import CursorResult, case, select, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,16 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.schemas.payee import PayeeCreate, PayeeUpdate
+from app.core.config import get_settings
+
+
+def _tax_id_fingerprint(kind: TaxIdKind, value: str) -> tuple[str, str, str]:
+    settings = get_settings()
+    configured = settings.payee_tax_id_hmac_key.get_secret_value()
+    key = (configured or settings.secret_key.get_secret_value()).encode()
+    normalized = value.strip().upper()
+    digest = hmac.new(key, f"{kind.value}:{normalized}".encode(), hashlib.sha256).hexdigest()
+    return digest, normalized[-4:], settings.payee_tax_id_hmac_key_version
 
 
 async def get_payees(
@@ -35,7 +47,7 @@ async def get_payees(
     stmt = (
         select(Payee, tx_count.label("transaction_count"))
         .outerjoin(count_subq, Payee.id == count_subq.c.payee_id)
-        .where(Payee.workspace_id == workspace_id)
+        .where(Payee.workspace_id == workspace_id, Payee.is_archived.is_(False))
     )
 
     if q:
@@ -168,16 +180,21 @@ async def _apply_tax_ids(
     for kind, value in normalised.items():
         row = existing.get(kind.value)
         if row is None:
+            fingerprint, last4, key_version = _tax_id_fingerprint(kind, value)
             session.add(
                 PayeeTaxId(
                     payee_id=payee.id,
                     workspace_id=workspace_id,
                     kind=kind.value,
                     value=value,
+                    fingerprint=fingerprint,
+                    last4=last4,
+                    key_version=key_version,
                 )
             )
-        elif row.value != value:
+        elif row.value != value or row.fingerprint is None:
             row.value = value
+            row.fingerprint, row.last4, row.key_version = _tax_id_fingerprint(kind, value)
     await session.flush()
 
 
@@ -265,19 +282,9 @@ async def delete_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id:
     if not payee:
         return False
 
-    # Null out transaction references
-    await session.execute(
-        update(Transaction)
-        .where(Transaction.payee_id == payee_id)
-        .values(payee_id=None)
-    )
-
-    # Delete mappings pointing to this payee
-    await session.execute(
-        delete(PayeeMapping).where(PayeeMapping.target_id == payee_id)
-    )
-
-    await session.delete(payee)
+    # Keep the row and its audit trail; archived payees are excluded from
+    # normal pickers and can be restored without losing transaction history.
+    payee.is_archived = True
     await session.commit()
     return True
 
@@ -292,21 +299,8 @@ async def bulk_delete_payees(session: AsyncSession, workspace_id: uuid.UUID, pay
     if not valid_ids:
         return 0
 
-    # Null out transaction references
-    await session.execute(
-        update(Transaction)
-        .where(Transaction.payee_id.in_(valid_ids))
-        .values(payee_id=None)
-    )
-
-    # Delete mappings pointing to this payee
-    await session.execute(
-        delete(PayeeMapping).where(PayeeMapping.target_id.in_(valid_ids))
-    )
-
-    # Delete payees
     result = await session.execute(
-        delete(Payee).where(Payee.id.in_(valid_ids))
+        update(Payee).where(Payee.id.in_(valid_ids)).values(is_archived=True)
     )
     
     await session.commit()
@@ -357,7 +351,7 @@ async def merge_payees(
             continue
         source = await get_payee(session, source_id, workspace_id)
         if source:
-            await session.delete(source)
+            source.is_archived = True
 
     await session.commit()
     return reassigned

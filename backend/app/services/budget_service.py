@@ -170,6 +170,7 @@ async def create_budget(
         amount=data.amount,
         month=data.month.replace(day=1),
         is_recurring=data.is_recurring,
+        is_draft=data.is_draft,
     )
     session.add(budget)
     await session.commit()
@@ -195,6 +196,7 @@ async def update_budget(
                 amount=data.amount if data.amount is not None else budget.amount,
                 month=effective,
                 is_recurring=True,
+                is_draft=budget.is_draft,
             )
             session.add(new_budget)
             await session.commit()
@@ -449,6 +451,9 @@ async def get_budget_vs_actual(
         percentage = None
         if budget_amount and budget_amount > 0:
             percentage = round(float(projected / budget_amount * 100), 1)
+        alert_level = "critical" if percentage is not None and percentage >= 100 else (
+            "warning" if percentage is not None and percentage >= 80 else None
+        )
 
         comparisons.append(BudgetVsActual(
             category_id=category.id,
@@ -463,6 +468,7 @@ async def get_budget_vs_actual(
             prev_month_amount=prev_actual,
             projected_prev_month_amount=projected_prev,
             percentage_used=percentage,
+            alert_level=alert_level,
             is_recurring=is_recurring,
         ))
 

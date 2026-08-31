@@ -87,6 +87,10 @@ class CreditCardBillRead(BaseModel):
     total_amount: float
     currency: str
     minimum_payment: Optional[float] = None
+    status: str = "open"
+    paid_amount: float = 0.0
+    closed_at: Optional[date] = None
+    source_updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

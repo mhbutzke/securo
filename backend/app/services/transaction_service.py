@@ -2,7 +2,7 @@ import re
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Optional
 
 from sqlalchemy import delete, select, func, or_, not_
 from sqlalchemy.ext.asyncio import AsyncSession

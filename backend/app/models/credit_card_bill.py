@@ -39,6 +39,10 @@ class CreditCardBill(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="BRL")
     minimum_payment: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, server_default="open")
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), nullable=False, server_default="0")
+    closed_at: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    source_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

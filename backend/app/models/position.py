@@ -1,18 +1,13 @@
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-
-if TYPE_CHECKING:
-    from app.models.asset_group import AssetGroup
-    from app.models.transaction import Transaction
-
 
 class Position(Base):
     """A receivable or liability tracked independently from positive assets."""
@@ -48,6 +43,9 @@ class Position(Base):
     movements: Mapped[list["PositionMovement"]] = relationship(
         back_populates="position", cascade="all, delete-orphan", order_by="PositionMovement.effective_date"
     )
+    valuations: Mapped[list["PositionValuation"]] = relationship(
+        back_populates="position", cascade="all, delete-orphan", order_by="PositionValuation.valuation_date"
+    )
 
 
 class PositionMovement(Base):
@@ -78,3 +76,32 @@ class PositionMovement(Base):
     )
     position: Mapped[Position] = relationship(back_populates="movements")
 
+
+class PositionValuation(Base):
+    """Append-only market/declared value for a receivable or liability."""
+
+    __tablename__ = "position_valuations"
+    __table_args__ = (
+        Index("ux_position_valuations_idempotency", "position_id", "idempotency_key", unique=True),
+        Index("ix_position_valuations_position_date", "position_id", "valuation_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    position_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    base_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=18, scale=2), nullable=True)
+    base_currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="BRL")
+    fx_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
+    valuation_date: Mapped[date] = mapped_column(Date, nullable=False)
+    basis: Mapped[str] = mapped_column(String(32), nullable=False, server_default="declared")
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False, server_default="low")
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    reversed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    position: Mapped[Position] = relationship(back_populates="valuations")

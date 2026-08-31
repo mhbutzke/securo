@@ -40,7 +40,9 @@ export interface PasskeyOptionsResponse {
 
 export interface AppSetting {
   key: string
-  value: string
+  value: string | null
+  last4?: string | null
+  fingerprint?: string | null
 }
 
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer' | 'manager'
@@ -98,6 +100,8 @@ export interface Category {
   is_hidden: boolean
   treat_as_transfer: boolean
   is_ignored: boolean
+  accounting_role?: 'income' | 'consumption' | 'financial_cost' | 'patrimonial' | 'capitalizable' | 'ignored' | null
+  is_essential?: boolean
 }
 
 /** Active rules that assign a category, used when retiring one. */
@@ -195,6 +199,8 @@ export interface CreditCardExposure {
   source: string
   basis: string
   confidence: string
+  closed_bill_count: number
+  closed_bill_paid_count: number
 }
 
 export type PositionSide = 'receivable' | 'liability'
@@ -213,6 +219,23 @@ export interface PositionMovement {
   effective_date: string
   idempotency_key: string
   transaction_id: string | null
+  reversed_at: string | null
+  created_at: string
+}
+
+export interface PositionValuation {
+  id: string
+  position_id: string
+  amount: number
+  currency: string
+  base_amount: number | null
+  base_currency: string
+  fx_rate: number | null
+  valuation_date: string
+  basis: 'declared' | 'market' | 'appraisal' | 'provider' | 'derived'
+  source: string
+  confidence: 'low' | 'medium' | 'high'
+  idempotency_key: string
   reversed_at: string | null
   created_at: string
 }
@@ -239,6 +262,7 @@ export interface Position {
   created_at: string
   balance: number
   movements: PositionMovement[]
+  valuations: PositionValuation[]
 }
 
 export interface CreditCardBill {
@@ -249,6 +273,10 @@ export interface CreditCardBill {
   total_amount: number
   currency: string
   minimum_payment: number | null
+  status: string
+  paid_amount: number
+  closed_at: string | null
+  source_updated_at: string | null
 }
 
 export interface Collection {
@@ -472,6 +500,7 @@ export interface Payee {
   type: 'person' | 'company' | null
   /** Where the row came from. Server-set at creation and never editable. */
   source: 'manual' | 'sync' | 'import'
+  is_archived: boolean
   is_favorite: boolean
   notes: string | null
   email: string | null
@@ -790,6 +819,7 @@ export interface BudgetVsActual {
   prev_month_amount: number
   projected_prev_month_amount: number
   percentage_used: number | null
+  alert_level: 'warning' | 'critical' | null
   is_recurring: boolean
 }
 
@@ -826,6 +856,9 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  liquidity_days: number | null
+  reserve_eligible: boolean
+  risk_level: 'low' | 'medium' | 'high' | null
   // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
   // cost basis of held units, cumulative realized gain, and whether the holding
   // is driven by the transactions ledger.
@@ -1076,6 +1109,7 @@ export interface FinancialCloseMetricQuality {
   status: string
   reason: string
   code?: string
+  source?: string | null
 }
 
 /** Deterministic, read-only close snapshot returned by /reports/financial-close. */
@@ -1105,6 +1139,11 @@ export interface FinancialCloseSnapshot {
   financial_portfolio_collection_name: string | null
   withdrawal_rate_12m: number | null
   liquidity_coverage: number | null
+  twr: number | null
+  xirr: number | null
+  ipca_return: number | null
+  ipca_source?: string | null
+  essential_cost_average: number | null
   metric_quality: Record<string, FinancialCloseMetricQuality>
   methodology: Record<string, string>
 }

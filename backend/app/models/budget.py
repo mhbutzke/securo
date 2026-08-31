@@ -30,6 +30,9 @@ class Budget(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     month: Mapped[date] = mapped_column(Date)  # First day of month
     is_recurring: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Drafts are advisory projections and never trigger alerts or transfers
+    # until the user explicitly activates them.
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     currency: Mapped[Optional[str]] = mapped_column(String(3), server_default="USD", nullable=True)
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

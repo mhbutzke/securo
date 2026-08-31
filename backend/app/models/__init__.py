@@ -26,7 +26,8 @@ from app.models.transaction_split import TransactionSplit
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups, collection_positions
 from app.models.correction_batch import CorrectionBatch, CorrectionBatchItem
-from app.models.position import Position, PositionMovement
+from app.models.position import Position, PositionMovement, PositionValuation
+from app.models.macro_index import IpcaObservation
 
 # Side-effect import: register the before_insert listener that auto-stamps
 # workspace_id from user_id on financial entities. Imported last so all
@@ -72,4 +73,6 @@ __all__ = [
     "CorrectionBatchItem",
     "Position",
     "PositionMovement",
+    "PositionValuation",
+    "IpcaObservation",
 ]

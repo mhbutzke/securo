@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -8,6 +8,8 @@ class CategoryBase(BaseModel):
     name: str
     icon: str = "circle-help"
     color: str = "#6B7280"
+    accounting_role: Optional[Literal["income", "consumption", "financial_cost", "patrimonial", "capitalizable", "ignored"]] = None
+    is_essential: bool = False
 
 
 class CategoryCreate(CategoryBase):
@@ -23,6 +25,8 @@ class CategoryUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     treat_as_transfer: Optional[bool] = None
     is_ignored: Optional[bool] = None
+    accounting_role: Optional[Literal["income", "consumption", "financial_cost", "patrimonial", "capitalizable", "ignored"]] = None
+    is_essential: Optional[bool] = None
     is_hidden: Optional[bool] = None
 
 

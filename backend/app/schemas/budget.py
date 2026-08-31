@@ -1,7 +1,7 @@
 import uuid
 from datetime import date as _Date
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -11,6 +11,7 @@ class BudgetCreate(BaseModel):
     amount: Decimal
     month: _Date  # First day of month
     is_recurring: bool = False
+    is_draft: bool = False
 
 
 class BudgetUpdate(BaseModel):
@@ -25,6 +26,7 @@ class BudgetRead(BaseModel):
     amount: Decimal
     month: _Date
     is_recurring: bool
+    is_draft: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -42,4 +44,5 @@ class BudgetVsActual(BaseModel):
     prev_month_amount: Decimal = Decimal("0")
     projected_prev_month_amount: Decimal = Decimal("0")
     percentage_used: Optional[float] = None
+    alert_level: Optional[Literal["warning", "critical"]] = None
     is_recurring: bool = False

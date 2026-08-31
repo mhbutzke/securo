@@ -40,5 +40,11 @@ class Category(Base):
     # for income/expense calculations.
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    # Explicit accounting semantics used by deterministic close metrics.
+    # Kept nullable during the expand-only migration so legacy categories can
+    # be backfilled without guessing a user's intent.
+    accounting_role: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    is_essential: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     user: Mapped["User"] = relationship(back_populates="categories")
     group: Mapped[Optional["CategoryGroup"]] = relationship(back_populates="categories")

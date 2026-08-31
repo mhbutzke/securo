@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -134,6 +134,10 @@ class BillData:
     total_amount: Decimal
     currency: str = "BRL"
     minimum_payment: Optional[Decimal] = None
+    status: str = "open"
+    paid_amount: Decimal = Decimal("0")
+    closed_at: Optional[date] = None
+    source_updated_at: Optional[datetime] = None
     raw_data: Optional[dict] = None
 
 

@@ -1,0 +1,44 @@
+# Ephemeral, Tailscale-only staging overlay. Use with the immutable images from
+# docker-compose.prod.yml and a short-lived project name/TTL.
+
+services:
+  db:
+    networks: [staging_internal]
+  redis:
+    networks: [staging_internal]
+  migrate:
+    networks: [staging_internal]
+  backend:
+    networks: [staging_internal]
+    environment:
+      DEBUG: "false"
+      PLUGGY_CLIENT_ID: ""
+      PLUGGY_CLIENT_SECRET: ""
+      ENABLE_BANKING_APP_ID: ""
+      SIMPLEFIN_ENABLED: "false"
+      AGENTS_ENABLED: "false"
+      AGENTS_OPENAI_API_KEY: ""
+      AGENTS_ANTHROPIC_API_KEY: ""
+      AGENTS_EXTRA_MCP_SERVERS: ""
+      OIDC_ENABLED: "false"
+      SMTP_HOST: ""
+  frontend:
+    networks: [staging_internal]
+    ports:
+      - "127.0.0.1:${STAGING_FRONTEND_PORT:-3320}:8080"
+  celery-worker:
+    networks: [staging_internal]
+    environment:
+      PLUGGY_CLIENT_ID: ""
+      PLUGGY_CLIENT_SECRET: ""
+      AGENTS_ENABLED: "false"
+  celery-beat:
+    networks: [staging_internal]
+    environment:
+      PLUGGY_CLIENT_ID: ""
+      PLUGGY_CLIENT_SECRET: ""
+      AGENTS_ENABLED: "false"
+
+networks:
+  staging_internal:
+    internal: true

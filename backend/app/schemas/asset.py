@@ -1,7 +1,7 @@
 import uuid
 from datetime import date as _date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -33,6 +33,9 @@ class AssetCreate(BaseModel):
     # médio model, consistent with the transaction ledger). When omitted, the
     # service seeds the buy at the live quote ("bought at market now").
     unit_price: Optional[Decimal] = None
+    liquidity_days: Optional[int] = None
+    reserve_eligible: bool = False
+    risk_level: Optional[Literal["low", "medium", "high"]] = None
 
 
 class AssetUpdate(BaseModel):
@@ -57,6 +60,9 @@ class AssetUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+    liquidity_days: Optional[int] = None
+    reserve_eligible: Optional[bool] = None
+    risk_level: Optional[Literal["low", "medium", "high"]] = None
 
 
 class AssetRead(BaseModel):
@@ -92,6 +98,9 @@ class AssetRead(BaseModel):
     last_price: Optional[float] = None
     last_price_at: Optional[datetime] = None
     logo_url: Optional[str] = None
+    liquidity_days: Optional[int] = None
+    reserve_eligible: bool = False
+    risk_level: Optional[str] = None
     # Ledger-derived fields (issue #235). average_price = weighted-average cost
     # per unit (preço médio); total_invested = cost basis of the held units;
     # realized_gain = cumulative gain/loss from sells; transaction_count lets

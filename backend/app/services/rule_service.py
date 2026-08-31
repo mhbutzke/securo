@@ -48,9 +48,10 @@ _ALLOWED_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex", "gt", "gte", "lt", "lte",
 }
-_ALLOWED_ACTION_OPS = {
-    "set_category", "set_payee", "set_description", "append_notes", "ignore",
-}
+# Correction batches deliberately start with category ownership only. Other
+# fields (notes, people, descriptions and ignored state) need their own
+# provenance columns before an automatic rule may touch them.
+_ALLOWED_ACTION_OPS = {"set_category"}
 _MAX_CORRECTION_BATCH_SIZE = 20
 
 
@@ -1336,7 +1337,14 @@ async def _safe_rule_snapshot(
     if lock_rows:
         rules_query = rules_query.with_for_update()
     rules_result = await session.execute(rules_query)
-    rules = list(rules_result.scalars().all())
+    # The correction pipeline is category-only. Legacy rules that still carry
+    # payee/description/notes/ignore actions are excluded until those fields
+    # have independent provenance and are explicitly migrated.
+    rules = [
+        rule
+        for rule in rules_result.scalars().all()
+        if all(action.get("op") == "set_category" for action in (rule.actions or []))
+    ]
     rule_payload = [
         {"id": str(r.id), "priority": r.priority, "conditions_op": r.conditions_op,
          "conditions": r.conditions or [], "actions": r.actions or []}
