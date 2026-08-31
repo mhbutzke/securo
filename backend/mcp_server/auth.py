@@ -61,8 +61,8 @@ def verify_request(request: Request) -> CallContext:
             audience=JWT_AUDIENCE,
             issuer=JWT_ISSUER,
         )
-    except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"invalid token: {exc}") from exc
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
     sub = payload.get("sub")
     if not sub:

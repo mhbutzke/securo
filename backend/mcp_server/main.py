@@ -133,8 +133,8 @@ async def mcp(request: Request) -> JSONResponse:
                 "structuredContent": result,
                 "isError": False,
             }))
-        except KeyError as exc:
-            return JSONResponse(content=_err(req_id, -32601, str(exc)))
+        except KeyError:
+            return JSONResponse(content=_err(req_id, -32601, "unknown tool"))
         except Exception:  # noqa: BLE001
             error_id = uuid.uuid4().hex
             try:
