@@ -53,6 +53,10 @@ celery_app.conf.beat_schedule = {
         # stamped with the 1:1 fallback (or left NULL) once real rates land.
         "schedule": 60 * 60 * 12,
     },
+    "refresh-ipca-daily": {
+        "task": "app.tasks.ipca_tasks.refresh_ipca_cache",
+        "schedule": 60 * 60 * 24,
+    },
 }
 
 celery_app.conf.include = [
@@ -60,6 +64,7 @@ celery_app.conf.include = [
     "app.tasks.recurring_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
+    "app.tasks.ipca_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

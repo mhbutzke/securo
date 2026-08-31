@@ -10,6 +10,7 @@ import logging
 import hashlib
 import json
 import time
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -103,6 +104,11 @@ async def mcp(request: Request) -> JSONResponse:
         arguments = params.get("arguments") or {}
         if not isinstance(name, str):
             return JSONResponse(content=_err(req_id, -32602, "tools/call requires 'name'"))
+        # Reject unknown tools before opening a tenant-scoped DB session. This
+        # keeps protocol errors deterministic even for users without a default
+        # workspace and avoids turning a malformed call into a server error.
+        if name not in REGISTRY:
+            return JSONResponse(content=_err(req_id, -32601, f"unknown tool: {name}"))
         try:
             async with async_session_maker() as session:
                 started = time.monotonic()
@@ -129,7 +135,8 @@ async def mcp(request: Request) -> JSONResponse:
             }))
         except KeyError as exc:
             return JSONResponse(content=_err(req_id, -32601, str(exc)))
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
+            error_id = uuid.uuid4().hex
             try:
                 async with async_session_maker() as audit_session:
                     audit_workspace_id = await resolve_workspace_id(audit_session, ctx)
@@ -147,9 +154,9 @@ async def mcp(request: Request) -> JSONResponse:
                     await audit_session.commit()
             except Exception:
                 logger.exception("MCP audit write failed")
-            logger.exception("MCP tool failure: %s", name)
+            logger.exception("MCP tool failure: %s (error_id=%s)", name, error_id)
             return JSONResponse(content=_ok(req_id, {
-                "content": [{"type": "text", "text": f"Tool error: {exc}"}],
+                "content": [{"type": "text", "text": f"Tool execution failed (error_id={error_id})"}],
                 "isError": True,
             }))
 

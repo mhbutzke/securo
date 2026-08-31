@@ -12,6 +12,7 @@ services:
     networks: [staging_internal]
     environment:
       DEBUG: "false"
+      FRONTEND_URL: ${STAGING_FRONTEND_URL:-http://localhost:3320}
       PLUGGY_CLIENT_ID: ""
       PLUGGY_CLIENT_SECRET: ""
       ENABLE_BANKING_APP_ID: ""
@@ -24,7 +25,9 @@ services:
       SMTP_HOST: ""
   frontend:
     networks: [staging_internal]
-    ports:
+    environment:
+      FRONTEND_URL: ${STAGING_FRONTEND_URL:-http://localhost:3320}
+    ports: !override
       - "127.0.0.1:${STAGING_FRONTEND_PORT:-3320}:8080"
   celery-worker:
     networks: [staging_internal]
@@ -32,12 +35,14 @@ services:
       PLUGGY_CLIENT_ID: ""
       PLUGGY_CLIENT_SECRET: ""
       AGENTS_ENABLED: "false"
+      IPCA_SYNC_ENABLED: "false"
   celery-beat:
     networks: [staging_internal]
     environment:
       PLUGGY_CLIENT_ID: ""
       PLUGGY_CLIENT_SECRET: ""
       AGENTS_ENABLED: "false"
+      IPCA_SYNC_ENABLED: "false"
 
 networks:
   staging_internal:

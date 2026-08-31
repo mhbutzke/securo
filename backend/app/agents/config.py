@@ -27,7 +27,9 @@ class AgentSettings(BaseSettings):
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
     # from the main app secret so revocation is independent.
-    mcp_jwt_secret: str = "change-me-in-production"
+    # Empty means the MCP profile is not configured. Token minting and
+    # verification fail closed until the operator supplies a real secret.
+    mcp_jwt_secret: str = ""
     mcp_jwt_ttl_seconds: int = 600
 
     # TTL for long-lived tokens minted via the UI for external agents

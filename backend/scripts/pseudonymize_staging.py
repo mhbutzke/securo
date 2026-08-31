@@ -8,10 +8,12 @@ import hmac
 import os
 import re
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.database import async_session_maker
 from app.models import BankConnection, Payee, PayeeTaxId, Transaction, User
+from app.models.transaction_attachment import TransactionAttachment
+from app.providers import get_storage_provider
 
 
 KEY = os.environ.get("STAGING_PSEUDONYM_KEY", "local-staging-only-change-me").encode()
@@ -30,6 +32,14 @@ def mask_identifiers(value: str | None) -> str | None:
 
 async def main():
     async with async_session_maker() as session:
+        # Attachments may contain invoices, IDs or free-form filenames that
+        # cannot be safely pseudonymized.  Staging is disposable, so remove
+        # both the metadata and the backing objects before it is exposed.
+        attachments = (await session.execute(select(TransactionAttachment))).scalars().all()
+        storage = get_storage_provider()
+        for attachment in attachments:
+            await storage.delete(attachment.storage_key)
+        await session.execute(delete(TransactionAttachment))
         for user in (await session.execute(select(User))).scalars().all():
             user.email = f"{pseudonym(user.email, 'user')}@example.invalid"
             user.hashed_password = "!staging-auth-disabled!"
@@ -51,7 +61,7 @@ async def main():
             tx.payee = mask_identifiers(tx.payee)
             tx.notes = mask_identifiers(tx.notes)
         await session.commit()
-        print({"status": "pseudonymized", "secrets_removed": True})
+        print({"status": "pseudonymized", "secrets_removed": True, "attachments_removed": len(attachments)})
 
 
 if __name__ == "__main__":

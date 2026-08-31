@@ -52,6 +52,7 @@ async def _build_budget_map(
         )
         .where(
             Budget.workspace_id == workspace_id,
+            Budget.is_draft.is_(False),
             Budget.is_recurring == True,  # noqa: E712
             Budget.month <= month_start,
         )
@@ -70,6 +71,7 @@ async def _build_budget_map(
         )
         .where(
             Budget.workspace_id == workspace_id,
+            Budget.is_draft.is_(False),
             Budget.is_recurring == True,  # noqa: E712
         )
     )
@@ -80,6 +82,7 @@ async def _build_budget_map(
     overrides_result = await session.execute(
         select(Budget).where(
             Budget.workspace_id == workspace_id,
+            Budget.is_draft.is_(False),
             Budget.is_recurring == False,  # noqa: E712
             Budget.month == month_start,
         )

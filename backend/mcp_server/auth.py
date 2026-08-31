@@ -47,6 +47,8 @@ def _settings():
 
 
 def verify_request(request: Request) -> CallContext:
+    if not _settings().mcp_jwt_secret:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MCP authentication is not configured")
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")

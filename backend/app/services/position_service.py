@@ -137,9 +137,19 @@ async def add_valuation(
     )
     if existing is not None:
         return existing
-    if data.currency != position.currency and data.base_amount is None and data.fx_rate is None:
-        raise ValueError("base_amount or fx_rate is required for a foreign-currency valuation")
-    valuation = PositionValuation(position_id=position_id, **data.model_dump())
+    values = data.model_dump()
+    # Every valuation must carry an amount in the workspace/base currency.
+    # When the provider gives an FX rate, derive that amount once and persist
+    # it in the append-only row so historical closes never depend on a later
+    # rate lookup.  A valuation already expressed in base currency is exact.
+    if data.currency == data.base_currency:
+        if values["base_amount"] is None:
+            values["base_amount"] = data.amount
+    elif values["base_amount"] is None:
+        if data.fx_rate is None:
+            raise ValueError("base_amount or fx_rate is required for a foreign-currency valuation")
+        values["base_amount"] = data.amount * data.fx_rate
+    valuation = PositionValuation(position_id=position_id, **values)
     session.add(valuation)
     try:
         await session.commit()

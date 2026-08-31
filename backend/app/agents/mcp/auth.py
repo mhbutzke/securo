@@ -34,6 +34,8 @@ def mint_token(
     workspace when the claim is absent.
     """
     s = get_agent_settings()
+    if not s.mcp_jwt_secret:
+        raise ValueError("MCP JWT secret is not configured")
     now = int(time.time())
     if audience != JWT_AUDIENCE:
         raise ValueError("Unsupported MCP audience")

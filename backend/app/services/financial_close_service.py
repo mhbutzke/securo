@@ -138,13 +138,18 @@ async def _collection_withdrawal_net(
 
 
 def _position_value_at(position: Position, cutoff: date) -> Decimal:
-    candidates = [
-        v for v in position.valuations
-        if v.valuation_date <= cutoff and v.reversed_at is None
-    ]
-    if candidates:
-        latest = max(candidates, key=lambda v: (v.valuation_date, v.created_at, str(v.id)))
-        return Decimal(str(latest.base_amount if latest.base_amount is not None else latest.amount))
+    candidates = sorted(
+        (v for v in position.valuations if v.valuation_date <= cutoff and v.reversed_at is None),
+        key=lambda v: (v.valuation_date, v.created_at, str(v.id)),
+        reverse=True,
+    )
+    for valuation in candidates:
+        if valuation.base_amount is not None:
+            return Decimal(str(valuation.base_amount))
+        if valuation.currency == valuation.base_currency:
+            return Decimal(str(valuation.amount))
+        if valuation.fx_rate is not None:
+            return Decimal(str(valuation.amount)) * Decimal(str(valuation.fx_rate))
     return sum((movement_delta for movement_delta in (
         (m.principal_amount if m.kind in ("opening", "increase") else -m.principal_amount)
         for m in position.movements

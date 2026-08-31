@@ -9,7 +9,7 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
-  SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in the production environment}
   PAYEE_TAX_ID_HMAC_KEY: ${PAYEE_TAX_ID_HMAC_KEY:-}
   PAYEE_TAX_ID_HMAC_KEY_VERSION: ${PAYEE_TAX_ID_HMAC_KEY_VERSION:-v1}
   DEBUG: ${DEBUG:-false}
@@ -50,7 +50,6 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
-  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-dev-mcp-secret-change-in-production}
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}
@@ -167,6 +166,11 @@ services:
   mcp-server:
     <<: *backend-base
     profiles: [agents]
+    environment:
+      <<: *backend-env
+      # Empty is intentional: the agents profile fails closed until an
+      # operator supplies a dedicated secret. Never use a predictable default.
+      AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-}
     command: uvicorn mcp_server.main:app --host 0.0.0.0 --port 8765
     ports:
       - "${AGENTS_MCP_EXTERNAL_HOST_PORT:-127.0.0.1:8765}:8765"
