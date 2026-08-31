@@ -1,17 +1,21 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Archive, CheckCircle2, ChevronDown, ChevronUp, Info, Scale } from 'lucide-react'
 import { positions } from '@/lib/api'
 import type { Position, PositionSide } from '@/types'
+import { localDateString } from '@/lib/date-utils'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 
 type SideFilter = 'all' | PositionSide
@@ -44,15 +48,46 @@ export default function PositionsPage() {
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
+  const { canWrite } = useWorkspace()
+  const queryClient = useQueryClient()
   const [side, setSide] = useState<SideFilter>('all')
   const [search, setSearch] = useState('')
   const [includeArchived, setIncludeArchived] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [formSide, setFormSide] = useState<PositionSide>('receivable')
+  const [formName, setFormName] = useState('')
+  const [formCounterparty, setFormCounterparty] = useState('')
+  const [formCurrency, setFormCurrency] = useState('BRL')
+  const [formPrincipal, setFormPrincipal] = useState('')
+  const [formStartDate, setFormStartDate] = useState(localDateString())
+  const [formDueDate, setFormDueDate] = useState('')
 
   const query = useQuery({
     queryKey: ['positions', includeArchived],
     queryFn: () => positions.list(includeArchived),
     staleTime: 30_000,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: () => positions.create({
+      side: formSide,
+      name: formName.trim(),
+      counterparty: formCounterparty.trim() || null,
+      currency: formCurrency.trim().toUpperCase() || 'BRL',
+      original_principal: Number(formPrincipal),
+      start_date: formStartDate,
+      due_date: formDueDate || null,
+    }),
+    onSuccess: () => {
+      toast.success('Posição criada')
+      setCreateOpen(false)
+      setFormName('')
+      setFormCounterparty('')
+      setFormPrincipal('')
+      setFormDueDate('')
+      queryClient.invalidateQueries({ queryKey: ['positions'] })
+    },
   })
 
   const filtered = useMemo(() => {
@@ -73,11 +108,35 @@ export default function PositionsPage() {
         section={t('assets.title')}
         title="Recebíveis e passivos"
         action={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/assets"><ArrowLeft className="h-4 w-4" /> Voltar aos ativos</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/assets"><ArrowLeft className="h-4 w-4" /> Voltar aos ativos</Link>
+            </Button>
+            {canWrite && <Button size="sm" onClick={() => setCreateOpen(true)}><Scale className="h-4 w-4" /> Nova posição</Button>}
+          </div>
         }
       />
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Nova posição</DialogTitle></DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); if (formName.trim() && Number(formPrincipal) > 0 && formStartDate) createMutation.mutate() }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label htmlFor="position-side">Lado</Label><select id="position-side" value={formSide} onChange={(event) => setFormSide(event.target.value as PositionSide)} className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm"><option value="receivable">A receber</option><option value="liability">Passivo</option></select></div>
+              <div className="space-y-2"><Label htmlFor="position-currency">Moeda</Label><Input id="position-currency" value={formCurrency} maxLength={3} onChange={(event) => setFormCurrency(event.target.value.toUpperCase())} /></div>
+            </div>
+            <div className="space-y-2"><Label htmlFor="position-name">Nome</Label><Input id="position-name" value={formName} onChange={(event) => setFormName(event.target.value)} placeholder="Ex.: Empréstimo ao irmão" required /></div>
+            <div className="space-y-2"><Label htmlFor="position-counterparty">Contraparte (opcional)</Label><Input id="position-counterparty" value={formCounterparty} onChange={(event) => setFormCounterparty(event.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label htmlFor="position-principal">Principal original</Label><Input id="position-principal" type="number" min="0.01" step="0.01" value={formPrincipal} onChange={(event) => setFormPrincipal(event.target.value)} required /></div>
+              <div className="space-y-2"><Label htmlFor="position-start">Data inicial</Label><Input id="position-start" type="date" value={formStartDate} onChange={(event) => setFormStartDate(event.target.value)} required /></div>
+            </div>
+            <div className="space-y-2"><Label htmlFor="position-due">Vencimento (opcional)</Label><Input id="position-due" type="date" value={formDueDate} onChange={(event) => setFormDueDate(event.target.value)} /></div>
+            {createMutation.isError && <p className="text-sm text-destructive">Não foi possível criar a posição. Verifique os campos e tente novamente.</p>}
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button type="submit" disabled={createMutation.isPending || !formName.trim() || Number(formPrincipal) <= 0}>{createMutation.isPending ? 'Salvando…' : 'Criar posição'}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Card className="mb-5 border-sky-500/30 bg-sky-500/[0.04]">
         <CardContent className="flex items-start gap-3 py-4 text-sm text-muted-foreground">
