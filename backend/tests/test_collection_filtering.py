@@ -19,6 +19,8 @@ from app.models.asset_group import AssetGroup
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services import dashboard_service, report_service
+from app.schemas.position import PositionCreate
+from app.services.position_service import create_position
 
 
 async def _account(session, user, name) -> Account:
@@ -211,3 +213,55 @@ async def test_wallet_only_collection_shows_assets_no_accounts(
     assets_bd = next(b for b in rep.summary.breakdowns if b.key == "assets")
     assert assets_bd.value == 2500.0
     assert rep.summary.primary_value == 2500.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_filters_positions_by_collection_membership(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A position lens includes only its selected receivables/liabilities."""
+    receivable = await create_position(
+        session,
+        test_workspace.id,
+        test_user.id,
+        PositionCreate(
+            side="receivable",
+            name="Loan",
+            currency="BRL",
+            original_principal=Decimal("1000"),
+            start_date=date.today(),
+        ),
+    )
+    await create_position(
+        session,
+        test_workspace.id,
+        test_user.id,
+        PositionCreate(
+            side="liability",
+            name="Debt",
+            currency="BRL",
+            original_principal=Decimal("250"),
+            start_date=date.today(),
+        ),
+    )
+
+    filtered = await report_service.get_net_worth_report(
+        session,
+        test_workspace.id,
+        test_user.id,
+        position_ids=[receivable.id],
+    )
+    breakdowns = {item.key: item.value for item in filtered.summary.breakdowns}
+    assert breakdowns["accounts"] == 0.0
+    # Receivables are shown in the positive assets bucket for this report
+    # composition; they remain distinct from structural Asset rows in the
+    # underlying ledger.
+    assert breakdowns["assets"] == 1000.0
+    assert breakdowns["liabilities"] == 0.0
+    assert filtered.summary.primary_value == 1000.0
+
+    unfiltered = await report_service.get_net_worth_report(
+        session, test_workspace.id, test_user.id
+    )
+    unfiltered_breakdowns = {item.key: item.value for item in unfiltered.summary.breakdowns}
+    assert unfiltered_breakdowns["liabilities"] == 250.0

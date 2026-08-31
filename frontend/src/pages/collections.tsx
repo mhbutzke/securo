@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { collections as collectionsApi, accounts as accountsApi, assetGroups as assetGroupsApi } from '@/lib/api'
+import { collections as collectionsApi, accounts as accountsApi, assetGroups as assetGroupsApi, positions as positionsApi } from '@/lib/api'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,10 @@ export default function CollectionsPage() {
   const { data: wallets } = useQuery({
     queryKey: ['asset-groups'],
     queryFn: assetGroupsApi.list,
+  })
+  const { data: positions } = useQuery({
+    queryKey: ['positions', 'collection-picker'],
+    queryFn: () => positionsApi.list(false),
   })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['collections'] })
@@ -104,6 +108,7 @@ export default function CollectionsPage() {
                   <p className="text-xs text-muted-foreground">
                     {t('collections.accountCount', { count: c.account_count })}
                     {c.wallet_count > 0 && ` · ${t('collections.walletCount', { count: c.wallet_count })}`}
+                    {c.position_count > 0 && ` · ${c.position_count} posição${c.position_count === 1 ? '' : 'ões'}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -126,6 +131,7 @@ export default function CollectionsPage() {
         collection={editing}
         accounts={sortAccountsByDisplayName(accounts ?? []).map((a) => ({ id: a.id, label: accountName.get(a.id) ?? a.name, currency: a.currency }))}
         wallets={(wallets ?? []).map((w) => ({ id: w.id, label: w.name }))}
+        positions={(positions ?? []).map((p) => ({ id: p.id, label: p.counterparty ? `${p.name} · ${p.counterparty}` : p.name, side: p.side }))}
         loading={createMutation.isPending || updateMutation.isPending}
         onSave={(payload) => {
           if (editing) updateMutation.mutate({ id: editing.id, ...payload })
@@ -152,27 +158,30 @@ export default function CollectionsPage() {
 }
 
 function CollectionDialog({
-  open, onClose, collection, accounts, wallets, loading, onSave,
+  open, onClose, collection, accounts, wallets, positions, loading, onSave,
 }: {
   open: boolean
   onClose: () => void
   collection: Collection | null
   accounts: { id: string; label: string; currency: string }[]
   wallets: { id: string; label: string }[]
+  positions: { id: string; label: string; side: 'receivable' | 'liability' }[]
   loading: boolean
-  onSave: (payload: { name: string; color: string; account_ids: string[]; wallet_ids: string[] }) => void
+  onSave: (payload: { name: string; color: string; account_ids: string[]; wallet_ids: string[]; position_ids: string[] }) => void
 }) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [color, setColor] = useState(SWATCHES[0])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [selectedWallets, setSelectedWallets] = useState<Set<string>>(new Set())
+  const [selectedPositions, setSelectedPositions] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     setName(collection?.name ?? '')
     setColor(collection?.color ?? SWATCHES[0])
     setSelected(new Set(collection?.account_ids ?? []))
     setSelectedWallets(new Set(collection?.wallet_ids ?? []))
+    setSelectedPositions(new Set(collection?.position_ids ?? []))
   }, [collection, open])
 
   const toggleIn = (setter: typeof setSelected) => (id: string) =>
@@ -184,6 +193,7 @@ function CollectionDialog({
     })
   const toggle = toggleIn(setSelected)
   const toggleWallet = toggleIn(setSelectedWallets)
+  const togglePosition = toggleIn(setSelectedPositions)
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -195,7 +205,7 @@ function CollectionDialog({
           onSubmit={(e) => {
             e.preventDefault()
             if (!name.trim()) return
-            onSave({ name: name.trim(), color, account_ids: [...selected], wallet_ids: [...selectedWallets] })
+            onSave({ name: name.trim(), color, account_ids: [...selected], wallet_ids: [...selectedWallets], position_ids: [...selectedPositions] })
           }}
           className="space-y-4"
         >
@@ -260,6 +270,27 @@ function CollectionDialog({
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">{t('collections.walletsHint', { count: selectedWallets.size })}</p>
+            </div>
+          )}
+
+          {positions.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Recebíveis e passivos</Label>
+              <div className="max-h-44 overflow-y-auto rounded-lg border border-border/60 divide-y divide-border/40">
+                {positions.map((position) => (
+                  <label key={position.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40">
+                    <input
+                      type="checkbox"
+                      checked={selectedPositions.has(position.id)}
+                      onChange={() => togglePosition(position.id)}
+                      className="h-4 w-4 rounded border-border accent-primary"
+                    />
+                    <span className="flex-1 truncate">{position.label}</span>
+                    <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">{position.side === 'receivable' ? 'a receber' : 'passivo'}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">{selectedPositions.size} posição{selectedPositions.size === 1 ? '' : 'ões'} selecionada{selectedPositions.size === 1 ? '' : 's'}</p>
             </div>
           )}
 

@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { formatCurrency } from '@/lib/format'
 
 type SideFilter = 'all' | PositionSide
@@ -49,6 +50,7 @@ export default function PositionsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { canWrite } = useWorkspace()
+  const { activePositionIds } = useCollectionFilter()
   const queryClient = useQueryClient()
   const [side, setSide] = useState<SideFilter>('all')
   const [search, setSearch] = useState('')
@@ -132,11 +134,12 @@ export default function PositionsPage() {
   const filtered = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase()
     return (query.data ?? []).filter((item) => {
+      if (activePositionIds && !activePositionIds.includes(item.id)) return false
       if (side !== 'all' && item.side !== side) return false
       if (!needle) return true
       return [item.name, item.counterparty ?? '', item.currency].some((value) => value.toLocaleLowerCase().includes(needle))
     })
-  }, [query.data, search, side])
+  }, [query.data, search, side, activePositionIds])
 
   const receivables = filtered.filter((item) => item.side === 'receivable')
   const liabilities = filtered.filter((item) => item.side === 'liability')

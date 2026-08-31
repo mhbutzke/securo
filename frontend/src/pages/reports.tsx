@@ -150,9 +150,10 @@ export default function ReportsPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   // Active Collection filter (issue #105): scope all report tabs to its
   // accounts; net worth also includes the collection's wallets' assets.
-  const { activeAccountIds, activeWalletIds } = useCollectionFilter()
+  const { activeAccountIds, activeWalletIds, activePositionIds } = useCollectionFilter()
   const acctIds = activeAccountIds ?? undefined
   const walletIds = activeWalletIds ?? undefined
+  const positionIds = activePositionIds ?? undefined
   // Wallet-only collection (active, zero accounts): the account-based reports
   // (income/expenses, cash flow) have no data — only net worth (which includes
   // the wallets' assets) is meaningful.
@@ -196,13 +197,13 @@ export default function ReportsPage() {
   }
 
   const { data, isLoading } = useQuery<ReportResponse>({
-    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
+    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds, activePositionIds],
     queryFn: () =>
       isCashFlow
         ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
         : activeTab === 'income_expenses' || isMoneyMap
           ? reports.incomeExpenses(months, interval, acctIds, period, days)
-          : reports.netWorth(months, interval, acctIds, walletIds, period),
+          : reports.netWorth(months, interval, acctIds, walletIds, period, positionIds),
     enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
   })
 

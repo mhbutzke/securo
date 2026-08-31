@@ -1316,11 +1316,11 @@ export const collections = {
     const { data } = await api.get('/collections')
     return data
   },
-  create: async (payload: { name: string; icon?: string; color?: string; account_ids?: string[]; wallet_ids?: string[] }): Promise<Collection> => {
+  create: async (payload: { name: string; icon?: string; color?: string; account_ids?: string[]; wallet_ids?: string[]; position_ids?: string[] }): Promise<Collection> => {
     const { data } = await api.post('/collections', payload)
     return data
   },
-  update: async (id: string, payload: Partial<{ name: string; icon: string; color: string; position: number; account_ids: string[]; wallet_ids: string[] }>): Promise<Collection> => {
+  update: async (id: string, payload: Partial<{ name: string; icon: string; color: string; position: number; account_ids: string[]; wallet_ids: string[]; position_ids: string[] }>): Promise<Collection> => {
     const { data } = await api.patch(`/collections/${id}`, payload)
     return data
   },
@@ -1331,13 +1331,14 @@ export const collections = {
 
 // Reports
 export const reports = {
-  netWorth: async (months = 12, interval = 'monthly', accountIds?: string[], assetGroupIds?: string[], period?: 'ytd'): Promise<ReportResponse> => {
-    const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
+  netWorth: async (months = 12, interval = 'monthly', accountIds?: string[], assetGroupIds?: string[], period?: 'ytd', positionIds?: string[]): Promise<ReportResponse> => {
+    const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0) || (positionIds && positionIds.length > 0)
     const { data } = await api.get('/reports/net-worth', {
       params: {
         months, interval, period,
         ...(accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}),
         ...(assetGroupIds && assetGroupIds.length > 0 ? { asset_group_ids: assetGroupIds } : {}),
+        ...(positionIds && positionIds.length > 0 ? { position_ids: positionIds } : {}),
       },
       ...(hasFilter ? { paramsSerializer: { indexes: null as null } } : {}),
     })

@@ -13,6 +13,8 @@ type CollectionFilterValue = {
   activeAccountIds: string[] | null
   // null = no filter; otherwise the active collection's wallet (asset_group) ids.
   activeWalletIds: string[] | null
+  // null = no filter; otherwise the active collection's receivable/liability ids.
+  activePositionIds: string[] | null
 }
 
 const CollectionFilterContext = createContext<CollectionFilterValue | null>(null)
@@ -65,6 +67,7 @@ export function CollectionFilterProvider({ children }: { children: ReactNode }) 
     setActiveCollectionId,
     activeAccountIds: activeCollection ? activeCollection.account_ids : null,
     activeWalletIds: activeCollection ? activeCollection.wallet_ids : null,
+    activePositionIds: activeCollection ? activeCollection.position_ids : null,
   }
 
   return (

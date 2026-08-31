@@ -187,6 +187,44 @@ async def test_collection_with_wallets(
 
 
 @pytest.mark.asyncio
+async def test_collection_with_positions(
+    client: AsyncClient, auth_headers
+):
+    position_resp = await client.post(
+        "/api/positions",
+        headers=auth_headers,
+        json={
+            "side": "receivable",
+            "name": "Loan to family",
+            "currency": "BRL",
+            "original_principal": "1500.00",
+            "start_date": "2026-01-01",
+        },
+    )
+    assert position_resp.status_code == 201, position_resp.text
+    position_id = position_resp.json()["id"]
+
+    created = await client.post(
+        "/api/collections",
+        headers=auth_headers,
+        json={"name": "Recebíveis", "position_ids": [position_id]},
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["position_count"] == 1
+    assert body["position_ids"] == [position_id]
+
+    cleared = await client.patch(
+        f"/api/collections/{body['id']}",
+        headers=auth_headers,
+        json={"position_ids": []},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["position_count"] == 0
+    assert cleared.json()["position_ids"] == []
+
+
+@pytest.mark.asyncio
 async def test_same_account_and_wallet_shared_across_collections(
     client: AsyncClient, auth_headers, test_user: User, session: AsyncSession
 ):

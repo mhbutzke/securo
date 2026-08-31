@@ -262,6 +262,8 @@ export interface Collection {
   account_count: number
   wallet_ids: string[]
   wallet_count: number
+  position_ids: string[]
+  position_count: number
 }
 
 export interface AccountSummary {
