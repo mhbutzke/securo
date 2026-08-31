@@ -15,6 +15,10 @@ import type {
   Account,
   AccountSummary,
   CreditCardExposure,
+  Position,
+  PositionMovement,
+  PositionMovementKind,
+  PositionSide,
   Collection,
   CreditCardBill,
   Transaction,
@@ -1222,6 +1226,67 @@ export const assets = {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  },
+}
+
+// Receivables and liabilities. These are ledger-backed positions and remain
+// separate from structural assets so negative balances are never represented
+// as an Asset with a negative value.
+export interface PositionCreatePayload {
+  side: PositionSide
+  name: string
+  counterparty?: string | null
+  currency?: string
+  original_principal: number
+  start_date: string
+  due_date?: string | null
+  interest_rate?: number | null
+  liquidity?: string
+  status?: string
+  valuation_date?: string | null
+  valuation_source?: string | null
+  valuation_confidence?: string | null
+  group_id?: string | null
+}
+
+export const positions = {
+  list: async (includeArchived = false): Promise<Position[]> => {
+    const { data } = await api.get('/positions', { params: { include_archived: includeArchived } })
+    return data
+  },
+  get: async (id: string): Promise<Position> => {
+    const { data } = await api.get(`/positions/${id}`)
+    return data
+  },
+  create: async (payload: PositionCreatePayload): Promise<Position> => {
+    const { data } = await api.post('/positions', payload)
+    return data
+  },
+  update: async (id: string, payload: Partial<PositionCreatePayload> & { is_archived?: boolean }): Promise<Position> => {
+    const { data } = await api.patch(`/positions/${id}`, payload)
+    return data
+  },
+  addMovement: async (
+    id: string,
+    payload: {
+      kind: PositionMovementKind
+      principal_amount: number
+      cash_amount?: number | null
+      interest_amount?: number
+      fee_amount?: number
+      tax_amount?: number
+      fx_rate?: number | null
+      effective_date: string
+      idempotency_key: string
+      transaction_id?: string | null
+    },
+  ): Promise<PositionMovement> => {
+    const { data } = await api.post(`/positions/${id}/movements`, payload)
+    return data
+  },
+  reverseMovement: async (positionId: string, movementId: string): Promise<PositionMovement> => {
+    const { data } = await api.post(`/positions/${positionId}/movements/${movementId}/reverse`)
+    return data
   },
 }
 

@@ -40,6 +40,7 @@ import {
   Bitcoin,
   PieChart,
   AlertTriangle,
+  Scale,
   Upload,
 } from 'lucide-react'
 import {
@@ -1019,22 +1020,28 @@ export default function AssetsPage() {
         section={t('assets.title')}
         title={t('assets.title')}
         action={
-          canWrite ? (
-            <div className="flex items-center gap-2">
-              <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
-                <Upload size={16} />
-                {t('assetImport.action')}
+          <div className="flex items-center gap-2">
+              <Button onClick={() => navigate('/positions')} variant="outline" className="gap-1.5">
+                <Scale size={16} />
+                Recebíveis e passivos
               </Button>
-              <Button onClick={openCreateWallet} variant="outline" className="gap-1.5">
-                <Wallet size={16} />
-                {t('assets.newWallet')}
-              </Button>
-              <Button onClick={openCreate} className="gap-1.5">
-                <Plus size={16} />
-                {t('assets.addAsset')}
-              </Button>
-            </div>
-          ) : undefined
+            {canWrite ? (
+              <>
+                <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
+                  <Upload size={16} />
+                  {t('assetImport.action')}
+                </Button>
+                <Button onClick={openCreateWallet} variant="outline" className="gap-1.5">
+                  <Wallet size={16} />
+                  {t('assets.newWallet')}
+                </Button>
+                <Button onClick={openCreate} className="gap-1.5">
+                  <Plus size={16} />
+                  {t('assets.addAsset')}
+                </Button>
+              </>
+            ) : null}
+          </div>
         }
       />
 

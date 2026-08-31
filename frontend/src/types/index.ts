@@ -197,6 +197,50 @@ export interface CreditCardExposure {
   confidence: string
 }
 
+export type PositionSide = 'receivable' | 'liability'
+export type PositionMovementKind = 'opening' | 'increase' | 'decrease' | 'writeoff'
+
+export interface PositionMovement {
+  id: string
+  position_id: string
+  kind: PositionMovementKind
+  principal_amount: number
+  cash_amount: number | null
+  interest_amount: number
+  fee_amount: number
+  tax_amount: number
+  fx_rate: number | null
+  effective_date: string
+  idempotency_key: string
+  transaction_id: string | null
+  reversed_at: string | null
+  created_at: string
+}
+
+export interface Position {
+  id: string
+  user_id: string
+  workspace_id: string
+  side: PositionSide
+  name: string
+  counterparty: string | null
+  currency: string
+  original_principal: number
+  start_date: string
+  due_date: string | null
+  interest_rate: number | null
+  liquidity: string
+  status: string
+  valuation_date: string | null
+  valuation_source: string | null
+  valuation_confidence: string | null
+  group_id: string | null
+  is_archived: boolean
+  created_at: string
+  balance: number
+  movements: PositionMovement[]
+}
+
 export interface CreditCardBill {
   id: string
   account_id: string
