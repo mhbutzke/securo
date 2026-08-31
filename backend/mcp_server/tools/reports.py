@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import dashboard_service, report_service
+from app.services import dashboard_service, financial_close_service, report_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import parse_date, resolve_workspace_id
@@ -21,6 +22,42 @@ def _serialize_report(r: Any) -> dict[str, Any]:
     if hasattr(r, "model_dump"):
         return r.model_dump(mode="json")
     return r if isinstance(r, dict) else {"value": str(r)}
+
+
+@tool(
+    name="get_financial_close",
+    description=(
+        "Return the deterministic financial close snapshot for one YYYY-MM "
+        "period. Includes the conservative synchronization cutoff, economic "
+        "income, recurring consumption, patrimonial transfers, positions, "
+        "net worth and explicit metric-quality notes. Read-only; the agent "
+        "should narrate this snapshot instead of recomputing totals."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "period": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}$",
+                "description": "Closing period in YYYY-MM format.",
+            },
+        },
+        "required": ["period"],
+        "additionalProperties": False,
+    },
+    tags=["read", "reports", "financial-close"],
+)
+async def get_financial_close(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    period: str,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    snapshot = await financial_close_service.build_snapshot(session, ws_id, period)
+    # MCP's JSONResponse cannot encode Decimal values directly. The encoder
+    # also keeps dates and the nested metric-quality object deterministic.
+    return jsonable_encoder(snapshot)
 
 
 @tool(

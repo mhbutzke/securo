@@ -41,6 +41,7 @@ def test_registry_contains_v1_tools():
         "get_income_expenses",
         "get_cash_flow",
         "get_dashboard_snapshot",
+        "get_financial_close",
         "search_all",
         "aggregate",
         "propose_categorize",
@@ -219,6 +220,17 @@ async def test_list_goals_empty(session: AsyncSession, ctx: CallContext):
     handler = REGISTRY["list_goals"].handler
     r = await handler(session=session, ctx=ctx)
     assert r["total"] == 0
+
+
+async def test_financial_close_returns_deterministic_snapshot(
+    session: AsyncSession, ctx: CallContext
+):
+    handler = REGISTRY["get_financial_close"].handler
+    result = await handler(session=session, ctx=ctx, period="2026-01")
+    assert result["period"] == "2026-01"
+    assert "cutoff_date" in result
+    assert "metric_quality" in result
+    assert result["metric_quality"]["portfolio_withdrawal_net"]["status"] == "unavailable"
 
 
 async def test_list_budgets_empty(session: AsyncSession, ctx: CallContext):
