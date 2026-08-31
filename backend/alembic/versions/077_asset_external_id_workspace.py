@@ -1,8 +1,7 @@
-"""scope asset external IDs to workspaces
+"""scope asset external IDs to workspaces after the financial foundation
 
-Revision ID: 077
-Revises: 076
-Create Date: 2026-08-30
+Revision ID: 085_asset_external_id
+Revises: 084
 """
 
 from typing import Sequence, Union
@@ -10,8 +9,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "077"
-down_revision: Union[str, None] = "076"
+revision: str = "085_asset_external_id"
+down_revision: Union[str, None] = "084"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -24,8 +23,7 @@ def _duplicate_external_id(scope_column: str):
             FROM assets
             WHERE external_id IS NOT NULL
             GROUP BY workspace_id, source, external_id
-            HAVING count(*) > 1
-            LIMIT 1
+            HAVING count(*) > 1 LIMIT 1
             """
         ),
         "user_id": sa.text(
@@ -34,17 +32,11 @@ def _duplicate_external_id(scope_column: str):
             FROM assets
             WHERE external_id IS NOT NULL
             GROUP BY user_id, source, external_id
-            HAVING count(*) > 1
-            LIMIT 1
+            HAVING count(*) > 1 LIMIT 1
             """
         ),
     }
-    return (
-        op.get_bind()
-        .execute(queries[scope_column])
-        .mappings()
-        .first()
-    )
+    return op.get_bind().execute(queries[scope_column]).mappings().first()
 
 
 def _require_unique_external_ids(scope_column: str) -> None:
