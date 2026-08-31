@@ -60,6 +60,7 @@ function MetricCard({
   locale,
   mask,
   quality,
+  qualityReason,
   emphasis = false,
 }: {
   label: string
@@ -69,6 +70,7 @@ function MetricCard({
   locale: string
   mask: (value: string) => string
   quality?: FinancialCloseMetricQuality
+  qualityReason?: string
   emphasis?: boolean
 }) {
   const rendered = kind === 'percent'
@@ -86,7 +88,7 @@ function MetricCard({
       </CardHeader>
       {quality && (unavailable || quality.status !== 'available') && (
         <CardContent className="pt-0">
-          <p className={`text-xs leading-relaxed ${quality.status === 'provisional' ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>{quality.reason}</p>
+          <p className={`text-xs leading-relaxed ${quality.status === 'provisional' ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>{qualityReason ?? quality.reason}</p>
         </CardContent>
       )}
     </Card>
@@ -125,6 +127,10 @@ export default function FinancialClosePage() {
   const data = query.data
 
   const quality = (key: string) => data?.metric_quality?.[key]
+  const portfolioQuality = quality('financial_portfolio_net')
+  const portfolioQualityReason = portfolioQuality?.code === 'investible_portfolio_lens_required'
+    ? t('financialClose.portfolioNetProxyReason')
+    : undefined
 
   return (
     <div>
@@ -207,7 +213,7 @@ export default function FinancialClosePage() {
               <MetricCard label="Recebíveis" value={data.receivables} currency={currency} locale={locale} mask={mask} />
               <MetricCard label="Passivos" value={data.liabilities} currency={currency} locale={locale} mask={mask} />
               <MetricCard label="Patrimônio líquido consolidado" value={data.net_worth_consolidated} currency={currency} locale={locale} mask={mask} emphasis />
-              <MetricCard label="Carteira financeira líquida (proxy)" value={data.financial_portfolio_net} currency={currency} locale={locale} mask={mask} quality={quality('financial_portfolio_net')} emphasis />
+              <MetricCard label={t('financialClose.portfolioNetProxyLabel')} value={data.financial_portfolio_net} currency={currency} locale={locale} mask={mask} quality={portfolioQuality} qualityReason={portfolioQualityReason} emphasis />
             </div>
           </section>
 

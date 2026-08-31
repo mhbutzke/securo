@@ -209,7 +209,8 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             },
             "financial_portfolio_net": {
                 "status": "provisional",
-                "reason": "Proxy amplo: inclui todas as contas e ativos estruturais. Configure a Collection Carteira investível para separar a carteira financeira.",
+                "reason": "Investible-portfolio lens is not configured; the current value is a broad proxy over accounts and structural assets.",
+                "code": "investible_portfolio_lens_required",
             },
         },
         "methodology": {
@@ -219,6 +220,5 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             "savings_rate": "null when economic income is not positive",
             "principal_withdrawals": "excluded from economic income; linked cash legs are patrimonial transfers",
             "position_result": "interest increases/lowers result by side; fees and taxes are costs",
-            "financial_portfolio_net": "provisional proxy until the investible-portfolio Collection is configured",
         },
     }

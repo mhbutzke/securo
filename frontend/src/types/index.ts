@@ -1075,6 +1075,7 @@ export interface ReportResponse {
 export interface FinancialCloseMetricQuality {
   status: string
   reason: string
+  code?: string
 }
 
 /** Deterministic, read-only close snapshot returned by /reports/financial-close. */
