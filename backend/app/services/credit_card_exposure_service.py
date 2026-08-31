@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
+from app.services.period_cutoff import resolve_workspace_cutoff
 
 
 async def get_exposure(session: AsyncSession, workspace_id: uuid.UUID, account_id: uuid.UUID):
@@ -16,10 +17,11 @@ async def get_exposure(session: AsyncSession, workspace_id: uuid.UUID, account_i
         return None
     if account.type != "credit_card":
         return None
-    today = date.today()
+    cutoff_info = await resolve_workspace_cutoff(session, workspace_id, date.today())
+    as_of = cutoff_info.cutoff_date
     bills = list((await session.execute(select(CreditCardBill).where(CreditCardBill.account_id == account_id).order_by(CreditCardBill.due_date))).scalars().all())
-    closed = [b for b in bills if b.due_date <= today]
-    open_bill = next((b for b in bills if b.due_date > today), None)
+    closed = [b for b in bills if b.due_date <= as_of]
+    open_bill = next((b for b in bills if b.due_date > as_of), None)
     # The issuer balance is the authoritative committed debt when present.
     committed = max(-Decimal(str(account.balance)), Decimal("0"))
     closed_total = sum((Decimal(str(b.total_amount)) for b in closed), Decimal("0"))
@@ -36,7 +38,7 @@ async def get_exposure(session: AsyncSession, workspace_id: uuid.UUID, account_i
             # Only parcels whose cash-flow date is still ahead are future
             # exposure. Historical installments remain part of the issuer
             # balance/bill reconciliation and must not be counted twice.
-            func.coalesce(Transaction.effective_date, Transaction.date) > today,
+            func.coalesce(Transaction.effective_date, Transaction.date) > as_of,
         )
     )
     unbilled = await session.scalar(
@@ -56,7 +58,7 @@ async def get_exposure(session: AsyncSession, workspace_id: uuid.UUID, account_i
         )
     )
     return {
-        "account_id": str(account_id), "as_of": today, "currency": account.currency,
+        "account_id": str(account_id), "as_of": as_of, "currency": account.currency,
         "closed_bill_unpaid": closed_total, "open_bill": open_total,
         "committed_debt": committed, "after_current_bill": after_current,
         "known_future_installments": Decimal(str(future_installments or 0)),

@@ -519,6 +519,62 @@ async def test_credit_card_exposure_separates_current_and_future_commitments(
 
 
 @pytest.mark.asyncio
+async def test_credit_card_exposure_uses_conservative_sync_cutoff(
+    session, test_user, test_workspace
+):
+    connection = BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="stale-card-item",
+        institution_name="Stale bank",
+        status="active",
+        # Midday UTC keeps the calendar date stable in the workspace's
+        # America/Sao_Paulo timezone.
+        last_sync_at=datetime(2026, 1, 10, 15, tzinfo=timezone.utc),
+    )
+    session.add(connection)
+    await session.flush()
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=connection.id,
+        name="Stale exposure card",
+        type="credit_card",
+        balance=Decimal("-100.00"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        CreditCardBill(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            external_id="stale-closed",
+            due_date=date(2026, 1, 5),
+            total_amount=Decimal("40.00"),
+        ),
+        CreditCardBill(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            external_id="stale-open",
+            due_date=date(2026, 1, 15),
+            total_amount=Decimal("60.00"),
+        ),
+    ])
+    await session.commit()
+
+    exposure = await get_exposure(session, test_workspace.id, account.id)
+
+    assert exposure is not None
+    assert exposure["as_of"] == date(2026, 1, 10)
+    assert exposure["closed_bill_unpaid"] == Decimal("40.00")
+    assert exposure["open_bill"] == Decimal("60.00")
+
+
+@pytest.mark.asyncio
 async def test_financial_close_clamps_future_period_without_sync(session, test_user, test_workspace):
     account = Account(
         user_id=test_user.id, workspace_id=test_workspace.id, name="Cash", type="checking",
