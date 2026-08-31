@@ -62,6 +62,13 @@ export default function PositionsPage() {
   const [formPrincipal, setFormPrincipal] = useState('')
   const [formStartDate, setFormStartDate] = useState(localDateString())
   const [formDueDate, setFormDueDate] = useState('')
+  const [movementPosition, setMovementPosition] = useState<Position | null>(null)
+  const [movementKind, setMovementKind] = useState<'increase' | 'decrease' | 'writeoff'>('increase')
+  const [movementPrincipal, setMovementPrincipal] = useState('')
+  const [movementInterest, setMovementInterest] = useState('0')
+  const [movementFee, setMovementFee] = useState('0')
+  const [movementTax, setMovementTax] = useState('0')
+  const [movementDate, setMovementDate] = useState(localDateString())
 
   const query = useQuery({
     queryKey: ['positions', includeArchived],
@@ -86,6 +93,38 @@ export default function PositionsPage() {
       setFormCounterparty('')
       setFormPrincipal('')
       setFormDueDate('')
+      queryClient.invalidateQueries({ queryKey: ['positions'] })
+    },
+  })
+
+  const movementMutation = useMutation({
+    mutationFn: () => {
+      if (!movementPosition) throw new Error('Position not selected')
+      return positions.addMovement(movementPosition.id, {
+        kind: movementKind,
+        principal_amount: Number(movementPrincipal),
+        interest_amount: Number(movementInterest) || 0,
+        fee_amount: Number(movementFee) || 0,
+        tax_amount: Number(movementTax) || 0,
+        effective_date: movementDate,
+        idempotency_key: `manual:${movementPosition.id}:${movementDate}:${movementKind}:${movementPrincipal}:${Date.now()}`,
+      })
+    },
+    onSuccess: () => {
+      toast.success('Movimento registrado')
+      setMovementPosition(null)
+      setMovementPrincipal('')
+      setMovementInterest('0')
+      setMovementFee('0')
+      setMovementTax('0')
+      queryClient.invalidateQueries({ queryKey: ['positions'] })
+    },
+  })
+
+  const reverseMutation = useMutation({
+    mutationFn: ({ positionId, movementId }: { positionId: string; movementId: string }) => positions.reverseMovement(positionId, movementId),
+    onSuccess: () => {
+      toast.success('Movimento revertido')
       queryClient.invalidateQueries({ queryKey: ['positions'] })
     },
   })
@@ -134,6 +173,26 @@ export default function PositionsPage() {
             <div className="space-y-2"><Label htmlFor="position-due">Vencimento (opcional)</Label><Input id="position-due" type="date" value={formDueDate} onChange={(event) => setFormDueDate(event.target.value)} /></div>
             {createMutation.isError && <p className="text-sm text-destructive">Não foi possível criar a posição. Verifique os campos e tente novamente.</p>}
             <DialogFooter><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button type="submit" disabled={createMutation.isPending || !formName.trim() || Number(formPrincipal) <= 0}>{createMutation.isPending ? 'Salvando…' : 'Criar posição'}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={movementPosition !== null} onOpenChange={(open) => { if (!open) setMovementPosition(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Registrar movimento{movementPosition ? ` · ${movementPosition.name}` : ''}</DialogTitle></DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); if (Number(movementPrincipal) > 0 && movementDate) movementMutation.mutate() }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label htmlFor="movement-kind">Tipo</Label><select id="movement-kind" value={movementKind} onChange={(event) => setMovementKind(event.target.value as typeof movementKind)} className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm"><option value="increase">Aumento</option><option value="decrease">Redução</option><option value="writeoff">Baixa</option></select></div>
+              <div className="space-y-2"><Label htmlFor="movement-date">Data efetiva</Label><Input id="movement-date" type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required /></div>
+            </div>
+            <div className="space-y-2"><Label htmlFor="movement-principal">Principal</Label><Input id="movement-principal" type="number" min="0.01" step="0.01" value={movementPrincipal} onChange={(event) => setMovementPrincipal(event.target.value)} required /></div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2"><Label htmlFor="movement-interest">Juros</Label><Input id="movement-interest" type="number" min="0" step="0.01" value={movementInterest} onChange={(event) => setMovementInterest(event.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="movement-fee">Taxa</Label><Input id="movement-fee" type="number" min="0" step="0.01" value={movementFee} onChange={(event) => setMovementFee(event.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="movement-tax">Imposto</Label><Input id="movement-tax" type="number" min="0" step="0.01" value={movementTax} onChange={(event) => setMovementTax(event.target.value)} /></div>
+            </div>
+            {movementMutation.isError && <p className="text-sm text-destructive">Não foi possível registrar o movimento. Verifique os valores.</p>}
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setMovementPosition(null)}>Cancelar</Button><Button type="submit" disabled={movementMutation.isPending || Number(movementPrincipal) <= 0}>{movementMutation.isPending ? 'Salvando…' : 'Registrar movimento'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -207,8 +266,8 @@ export default function PositionsPage() {
                   </div>
                   {expanded && (
                     <div className="mt-4 border-t border-border pt-3">
-                      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground"><CheckCircle2 className="h-3.5 w-3.5" /> Ledger de movimentos</div>
-                      {item.movements.length === 0 ? <p className="text-xs text-muted-foreground">Nenhum movimento.</p> : <div className="space-y-1.5">{item.movements.map((movement) => <div key={movement.id} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="text-muted-foreground">{movement.kind} · {dateLabel(movement.effective_date, dateLocale)}{movement.reversed_at ? ' · revertido' : ''}</span><span className="font-medium tabular-nums">{movement.kind === 'decrease' || movement.kind === 'writeoff' ? '−' : '+'}{displayAmount(movement.principal_amount, item.currency, locale, mask)}</span></div>)}</div>}
+                      <div className="mb-2 flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground"><span className="flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5" /> Ledger de movimentos</span>{canWrite && <Button type="button" variant="outline" size="xs" onClick={() => setMovementPosition(item)}>Registrar movimento</Button>}</div>
+                      {item.movements.length === 0 ? <p className="text-xs text-muted-foreground">Nenhum movimento.</p> : <div className="space-y-1.5">{item.movements.map((movement) => <div key={movement.id} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="text-muted-foreground">{movement.kind} · {dateLabel(movement.effective_date, dateLocale)}{movement.reversed_at ? ' · revertido' : ''}</span><span className="flex items-center gap-2 font-medium tabular-nums">{movement.kind === 'decrease' || movement.kind === 'writeoff' ? '−' : '+'}{displayAmount(movement.principal_amount, item.currency, locale, mask)}{canWrite && !movement.reversed_at && <button type="button" className="text-[10px] text-muted-foreground underline hover:text-rose-600" onClick={() => { if (window.confirm('Reverter este movimento? O histórico será preservado.')) reverseMutation.mutate({ positionId: item.id, movementId: movement.id }) }}>reverter</button>}</span></div>)}</div>}
                     </div>
                   )}
                 </CardContent>
