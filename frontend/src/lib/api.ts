@@ -1368,8 +1368,10 @@ export const reports = {
     })
     return data
   },
-  financialClose: async (period: string): Promise<FinancialCloseSnapshot> => {
-    const { data } = await api.get('/reports/financial-close', { params: { period } })
+  financialClose: async (period: string, collectionId?: string): Promise<FinancialCloseSnapshot> => {
+    const { data } = await api.get('/reports/financial-close', {
+      params: { period, ...(collectionId ? { collection_id: collectionId } : {}) },
+    })
     return data
   },
 }

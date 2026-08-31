@@ -6,9 +6,13 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.models.account import Account
+from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
+from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.credit_card_bill import CreditCardBill
+from app.models.collection import Collection
 from app.models.position import Position, PositionMovement
 from app.models.transaction import Transaction
 from app.schemas.position import PositionCreate, PositionMovementCreate
@@ -298,6 +302,100 @@ async def test_financial_close_excludes_transfers_and_returns_null_savings_witho
     assert snapshot["savings_rate"] is None
     assert snapshot["portfolio_withdrawal_net"] is None
     assert snapshot["metric_quality"]["portfolio_withdrawal_net"]["status"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_financial_close_uses_explicit_collection_lens_for_portfolio_net(
+    session, test_user, test_workspace
+):
+    selected_account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Investments cash",
+        type="checking", balance=Decimal("100"), currency="BRL",
+    )
+    outside_account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Family cash",
+        type="checking", balance=Decimal("1000"), currency="BRL",
+    )
+    wallet = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Brokerage",
+    )
+    outside_wallet = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Personal assets",
+    )
+    session.add_all([selected_account, outside_account, wallet, outside_wallet])
+    await session.flush()
+    selected_asset = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="ETF",
+        type="investment", currency="BRL", group_id=wallet.id, purchase_price=Decimal("1"),
+    )
+    outside_asset = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Car",
+        type="vehicle", currency="BRL", group_id=outside_wallet.id, purchase_price=Decimal("1"),
+    )
+    session.add_all([selected_asset, outside_asset])
+    await session.flush()
+    session.add_all([
+        AssetValue(asset_id=selected_asset.id, amount=Decimal("200"), date=date(2026, 1, 31)),
+        AssetValue(asset_id=outside_asset.id, amount=Decimal("300"), date=date(2026, 1, 31)),
+    ])
+    liability = Position(
+        user_id=test_user.id, workspace_id=test_workspace.id, side="liability",
+        name="Broker loan", currency="BRL", original_principal=Decimal("50"),
+        start_date=date(2026, 1, 1), liquidity="illiquid", status="open",
+    )
+    session.add(liability)
+    await session.flush()
+    session.add(PositionMovement(
+        position_id=liability.id, kind="opening", principal_amount=Decimal("50"),
+        effective_date=date(2026, 1, 1), idempotency_key="broker-loan-open",
+    ))
+    transfer_pair_id = uuid.uuid4()
+    session.add_all([
+        Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=selected_account.id,
+            description="Portfolio withdrawal", amount=Decimal("40"), date=date(2026, 1, 15),
+            type="debit", source="manual", transfer_pair_id=transfer_pair_id,
+        ),
+        Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=outside_account.id,
+            description="Family funding", amount=Decimal("40"), date=date(2026, 1, 15),
+            type="credit", source="manual", transfer_pair_id=transfer_pair_id,
+        ),
+    ])
+    collection = Collection(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Carteira investível",
+        accounts=[selected_account], asset_groups=[wallet], positions=[liability],
+    )
+    session.add(collection)
+    await session.commit()
+
+    snapshot = await build_snapshot(
+        session, test_workspace.id, "2026-01", collection_id=collection.id
+    )
+
+    # Manual balances are ledger-derived; the paired withdrawal debits the
+    # selected account by 40 before the 200 asset and 50 liability are netted.
+    assert snapshot["financial_portfolio_net"] == Decimal("110")
+    assert snapshot["financial_portfolio_collection_id"] == str(collection.id)
+    assert snapshot["financial_portfolio_collection_name"] == "Carteira investível"
+    assert snapshot["portfolio_withdrawal_net"] == Decimal("40")
+    assert snapshot["metric_quality"]["portfolio_withdrawal_net"]["status"] == "available"
+    assert snapshot["metric_quality"]["financial_portfolio_net"]["status"] == "available"
+    assert snapshot["metric_quality"]["financial_portfolio_net"]["code"] == "investible_portfolio_collection"
+
+
+@pytest.mark.asyncio
+async def test_financial_close_rejects_collection_from_another_workspace(
+    session, test_user, test_workspace
+):
+    other = Collection(
+        user_id=test_user.id, workspace_id=uuid.uuid4(), name="Carteira investível",
+    )
+    session.add(other)
+    await session.commit()
+
+    with pytest.raises(LookupError):
+        await build_snapshot(session, test_workspace.id, "2026-01", collection_id=other.id)
 
 
 @pytest.mark.asyncio

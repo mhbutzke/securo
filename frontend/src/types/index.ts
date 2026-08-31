@@ -1101,6 +1101,8 @@ export interface FinancialCloseSnapshot {
   liabilities: number
   net_worth_consolidated: number
   financial_portfolio_net: number
+  financial_portfolio_collection_id: string | null
+  financial_portfolio_collection_name: string | null
   withdrawal_rate_12m: number | null
   liquidity_coverage: number | null
   metric_quality: Record<string, FinancialCloseMetricQuality>

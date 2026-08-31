@@ -11,8 +11,10 @@ from sqlalchemy.orm import selectinload
 
 from app.models.account import Account
 from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.category import Category
+from app.models.collection import Collection
 from app.models.position import Position
 from app.models.transaction import Transaction
 from app.services.dashboard_service import _account_balance_at
@@ -44,7 +46,64 @@ async def _snapshot_account_balance(
     return Decimal(str(balance))
 
 
-async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period: str) -> dict:
+async def _load_collection(
+    session: AsyncSession, workspace_id: uuid.UUID, collection_id: uuid.UUID
+) -> Collection:
+    """Load a reporting lens and reject cross-workspace identifiers."""
+    result = await session.execute(
+        select(Collection)
+        .options(
+            selectinload(Collection.accounts),
+            selectinload(Collection.asset_groups).selectinload(AssetGroup.assets),
+            selectinload(Collection.positions).selectinload(Position.movements),
+        )
+        .where(Collection.id == collection_id, Collection.workspace_id == workspace_id)
+    )
+    collection = result.scalar_one_or_none()
+    if collection is None:
+        raise LookupError("Collection not found")
+    return collection
+
+
+async def _collection_withdrawal_net(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    collection_account_ids: set[uuid.UUID],
+    period_pair_ids: set[uuid.UUID],
+    cutoff: date,
+) -> Decimal:
+    """Sum paired cash legs leaving/entering the selected account lens."""
+    if not collection_account_ids or not period_pair_ids:
+        return Decimal("0")
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.transfer_pair_id.in_(period_pair_ids),
+            Transaction.date <= cutoff,
+        )
+    )
+    pairs: dict[uuid.UUID, list[Transaction]] = {}
+    for transaction in result.scalars().all():
+        if transaction.transfer_pair_id is not None:
+            pairs.setdefault(transaction.transfer_pair_id, []).append(transaction)
+    total = Decimal("0")
+    for legs in pairs.values():
+        if not any(leg.account_id not in collection_account_ids for leg in legs):
+            continue
+        for leg in legs:
+            if leg.account_id not in collection_account_ids:
+                continue
+            amount = abs(Decimal(str(leg.amount or 0)))
+            total += amount if leg.type == "debit" else -amount
+    return total
+
+
+async def build_snapshot(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    period: str,
+    collection_id: uuid.UUID | None = None,
+) -> dict:
     try:
         year, month = (int(v) for v in period.split("-", 1))
         start = date(year, month, 1)
@@ -56,6 +115,12 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     cutoff_source = cutoff_info.source
     latest_sync_at = cutoff_info.latest_sync_at
     sync_is_stale = cutoff_info.sync_is_stale
+    collection = None
+    if collection_id is not None:
+        collection = await _load_collection(session, workspace_id, collection_id)
+    collection_account_ids = {account.id for account in collection.accounts} if collection else set()
+    collection_wallet_ids = {wallet.id for wallet in collection.asset_groups} if collection else set()
+    collection_position_ids = {position.id for position in collection.positions} if collection else set()
     positions = await session.scalars(
         select(Position).options(selectinload(Position.movements)).where(
             Position.workspace_id == workspace_id, Position.is_archived == False
@@ -84,7 +149,11 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     consumption = Decimal("0")
     transfers = Decimal("0")
     ignored = Decimal("0")
-    for tx, as_transfer, category_ignored in tx_result.all():
+    tx_rows = tx_result.all()
+    period_transfer_pair_ids = {
+        tx.transfer_pair_id for tx, _, _ in tx_rows if tx.transfer_pair_id is not None
+    }
+    for tx, as_transfer, category_ignored in tx_rows:
         amount = abs(Decimal(str(tx.amount or 0)))
         if tx.is_ignored or category_ignored:
             ignored += amount
@@ -110,16 +179,25 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
     account_rows = await session.execute(
         select(Account).where(Account.workspace_id == workspace_id)
     )
+    accounts = list(account_rows.scalars().all())
     account_balance = Decimal("0")
-    for account in account_rows.scalars().all():
+    portfolio_account_balance = Decimal("0")
+    for account in accounts:
         # A close made after the requested cutoff still belongs in the
         # historical net worth. Accounts closed on or before the cutoff do not.
         if account.is_closed and account.closed_at is not None and account.closed_at.date() <= cutoff:
             continue
-        account_balance += await _snapshot_account_balance(session, account, cutoff)
+        balance = await _snapshot_account_balance(session, account, cutoff)
+        account_balance += balance
+        if account.id in collection_account_ids:
+            portfolio_account_balance += balance
 
-    assets = await session.scalars(select(Asset).where(Asset.workspace_id == workspace_id, Asset.is_archived == False))
+    asset_result = await session.scalars(
+        select(Asset).where(Asset.workspace_id == workspace_id, Asset.is_archived == False)
+    )
+    assets = list(asset_result.all())
     asset_total = Decimal("0")
+    portfolio_asset_total = Decimal("0")
     for asset in assets:
         value = await session.scalar(
             select(AssetValue.amount)
@@ -128,10 +206,14 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         )
         if value is None:
             value = asset.purchase_price if asset.purchase_date is None or asset.purchase_date <= cutoff else Decimal("0")
-        asset_total += Decimal(str(value or 0))
+        value = Decimal(str(value or 0))
+        asset_total += value
+        if asset.group_id in collection_wallet_ids:
+            portfolio_asset_total += value
 
     receivables = Decimal("0")
     liabilities = Decimal("0")
+    portfolio_liabilities = Decimal("0")
     position_interest_income = Decimal("0")
     position_costs = Decimal("0")
     for position, movement in active_movements:
@@ -157,19 +239,39 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         if side == "receivable":
             receivables += Decimal(str(principal or 0))
         else:
-            liabilities += Decimal(str(principal or 0))
+            principal = Decimal(str(principal or 0))
+            liabilities += principal
+            if position.id in collection_position_ids:
+                portfolio_liabilities += principal
 
     # A withdrawal only has meaning when the workspace has an explicit
     # investible-portfolio lens. Inferring it from account or asset names would
     # silently misclassify ordinary transfers, so fail closed until that lens
     # is configured.
     portfolio_withdrawals = None
+    if collection is not None:
+        portfolio_withdrawals = await _collection_withdrawal_net(
+            session, workspace_id, collection_account_ids, period_transfer_pair_ids, cutoff
+        )
     savings_rate = None if income <= 0 else (income - consumption) / income
     # Until the user explicitly configures the investible-portfolio lens, this
     # is a broad proxy over all open accounts/assets. Keep the number available
     # for continuity, but label it so downstream UI and narrators cannot pass
     # it off as a true investible-portfolio balance.
-    financial_portfolio_net = account_balance + asset_total - liabilities
+    if collection is not None:
+        financial_portfolio_net = portfolio_account_balance + portfolio_asset_total - portfolio_liabilities
+        financial_portfolio_quality = {
+            "status": "available",
+            "reason": "Calculated from the explicitly selected Collection lens.",
+            "code": "investible_portfolio_collection",
+        }
+    else:
+        financial_portfolio_net = account_balance + asset_total - liabilities
+        financial_portfolio_quality = {
+            "status": "provisional",
+            "reason": "Investible-portfolio lens is not configured; the current value is a broad proxy over accounts and structural assets.",
+            "code": "investible_portfolio_lens_required",
+        }
     return {
         "period": period,
         "as_of": cutoff.isoformat(),
@@ -192,26 +294,30 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
         "liabilities": liabilities,
         "net_worth_consolidated": account_balance + asset_total + receivables - liabilities,
         "financial_portfolio_net": financial_portfolio_net,
+        "financial_portfolio_collection_id": str(collection.id) if collection else None,
+        "financial_portfolio_collection_name": collection.name if collection else None,
         "withdrawal_rate_12m": None,
         "liquidity_coverage": None,
         "metric_quality": {
             "portfolio_withdrawal_net": {
-                "status": "unavailable",
-                "reason": "Configure the investible-portfolio lens before classifying withdrawals.",
+                "status": "available" if collection is not None else "unavailable",
+                "reason": "Calculated from paired transfers involving the selected Collection accounts."
+                if collection is not None
+                else "Configure the investible-portfolio lens before classifying withdrawals.",
+                "code": "collection_transfer_pairs" if collection is not None else "investible_portfolio_lens_required",
             },
             "withdrawal_rate_12m": {
                 "status": "unavailable",
-                "reason": "Requires an investible-portfolio lens and 13 monthly closing values.",
+                "reason": "Requires 13 monthly closing values for the selected Collection lens."
+                if collection is not None
+                else "Requires an investible-portfolio lens and 13 monthly closing values.",
+                "code": "monthly_closing_history_required" if collection is not None else "investible_portfolio_lens_required",
             },
             "liquidity_coverage": {
                 "status": "unavailable",
                 "reason": "Requires essential-expense categories and eligible D+0/D+1 assets.",
             },
-            "financial_portfolio_net": {
-                "status": "provisional",
-                "reason": "Investible-portfolio lens is not configured; the current value is a broad proxy over accounts and structural assets.",
-                "code": "investible_portfolio_lens_required",
-            },
+            "financial_portfolio_net": financial_portfolio_quality,
         },
         "methodology": {
             "source": "Securo ledger, account balances, asset valuations and Position ledger",

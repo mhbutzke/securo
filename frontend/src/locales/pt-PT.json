@@ -1347,9 +1347,12 @@
     "range30d": "30D"
   },
   "financialClose": {
+    "portfolioNetLabel": "Carteira financeira líquida",
     "portfolioNetProxyLabel": "Carteira financeira líquida (proxy)",
     "portfolioNetProxyReason": "A Collection Carteira investível ainda não está configurada. Este valor é uma proxy ampla sobre contas e ativos estruturais.",
-    "portfolioNetProxyMethodology": "Proxy provisória até a configuração da Collection Carteira investível"
+    "portfolioNetProxyMethodology": "Proxy provisória até a configuração da Collection Carteira investível",
+    "investibleCollectionLabel": "Collection Carteira investível",
+    "noInvestibleCollection": "Usar proxy ampla (sem Collection)"
   },
   "payees": {
     "addFavorite": "Adicionar aos favoritos",

@@ -19,14 +19,20 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 @router.get("/financial-close")
 async def financial_close(
     period: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    collection_id: Optional[uuid.UUID] = Query(None),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await financial_close_service.build_snapshot(session, ctx.workspace.id, period)
+        return await financial_close_service.build_snapshot(
+            session, ctx.workspace.id, period, collection_id=collection_id
+        )
     except ValueError as exc:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/financial-review-queue", response_model=FinancialReviewQueueResponse)

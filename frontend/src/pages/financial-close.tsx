@@ -9,7 +9,7 @@ import {
   Info,
   RefreshCw,
 } from 'lucide-react'
-import { reports } from '@/lib/api'
+import { collections as collectionsApi, reports } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -22,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 function dateLabel(value: string | null | undefined, locale: string): string {
   if (!value) return 'não disponível'
@@ -116,11 +117,25 @@ export default function FinancialClosePage() {
   const { user } = useAuth()
   const currency = user?.preferences?.currency_display ?? 'BRL'
   const [period, setPeriod] = useState(() => localDateString().slice(0, 7))
+  const [selectedCollectionId, setSelectedCollectionId] = useState('')
+  const collectionsQuery = useQuery({
+    queryKey: ['collections'],
+    queryFn: collectionsApi.list,
+    staleTime: 30_000,
+  })
+  const collections = collectionsQuery.data ?? []
+  const namedInvestibleCollections = collections.filter(
+    (collection) => collection.name.trim().toLocaleLowerCase() === 'carteira investível',
+  )
+  const autoCollectionId = namedInvestibleCollections.length === 1 ? namedInvestibleCollections[0].id : null
+  const effectiveCollectionId = selectedCollectionId === '__none__'
+    ? null
+    : selectedCollectionId || autoCollectionId
 
   const validPeriod = /^\d{4}-\d{2}$/.test(period)
   const query = useQuery<FinancialCloseSnapshot>({
-    queryKey: ['financial-close', period],
-    queryFn: () => reports.financialClose(period),
+    queryKey: ['financial-close', period, effectiveCollectionId],
+    queryFn: () => reports.financialClose(period, effectiveCollectionId ?? undefined),
     enabled: validPeriod,
     staleTime: 30_000,
   })
@@ -165,6 +180,23 @@ export default function FinancialClosePage() {
             <Button type="button" variant="outline" onClick={() => query.refetch()} disabled={!validPeriod || query.isFetching}>
               <RefreshCw className={query.isFetching ? 'animate-spin' : ''} /> Atualizar
             </Button>
+            <div className="space-y-2 min-w-64">
+              <Label htmlFor="close-investible-collection">{t('financialClose.investibleCollectionLabel')}</Label>
+              <Select
+                value={selectedCollectionId || autoCollectionId || '__none__'}
+                onValueChange={setSelectedCollectionId}
+              >
+                <SelectTrigger id="close-investible-collection" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t('financialClose.noInvestibleCollection')}</SelectItem>
+                  {collections.map((collection) => (
+                    <SelectItem key={collection.id} value={collection.id}>{collection.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {!validPeriod && <p className="mt-3 text-sm text-destructive">Informe um mês válido.</p>}
         </CardContent>
@@ -188,6 +220,7 @@ export default function FinancialClosePage() {
               <span><strong>Período:</strong> {data.period}</span>
               <span><strong>Corte:</strong> {dateLabel(data.cutoff_date, dateLocale)} ({data.cutoff_source})</span>
               <span><strong>Última sincronização:</strong> {data.latest_sync_at ? new Date(data.latest_sync_at).toLocaleString(dateLocale) : 'não disponível'}</span>
+              <span><strong>{t('financialClose.investibleCollectionLabel')}:</strong> {data.financial_portfolio_collection_name ?? t('financialClose.noInvestibleCollection')}</span>
               {data.sync_is_stale && <span className="text-amber-600">Sincronização possivelmente desatualizada.</span>}
             </CardContent>
           </Card>
@@ -213,7 +246,7 @@ export default function FinancialClosePage() {
               <MetricCard label="Recebíveis" value={data.receivables} currency={currency} locale={locale} mask={mask} />
               <MetricCard label="Passivos" value={data.liabilities} currency={currency} locale={locale} mask={mask} />
               <MetricCard label="Patrimônio líquido consolidado" value={data.net_worth_consolidated} currency={currency} locale={locale} mask={mask} emphasis />
-              <MetricCard label={t('financialClose.portfolioNetProxyLabel')} value={data.financial_portfolio_net} currency={currency} locale={locale} mask={mask} quality={portfolioQuality} qualityReason={portfolioQualityReason} emphasis />
+              <MetricCard label={data.financial_portfolio_collection_id ? t('financialClose.portfolioNetLabel') : t('financialClose.portfolioNetProxyLabel')} value={data.financial_portfolio_net} currency={currency} locale={locale} mask={mask} quality={portfolioQuality} qualityReason={portfolioQualityReason} emphasis />
             </div>
           </section>
 
