@@ -20,6 +20,29 @@ from app.services.period_cutoff import resolve_workspace_cutoff
 
 
 @pytest.mark.asyncio
+async def test_financial_close_route_requires_auth_and_returns_contract(
+    client, auth_headers, test_workspace
+):
+    unauthenticated = await client.get(
+        "/api/reports/financial-close", params={"period": "2026-01"}
+    )
+    assert unauthenticated.status_code == 401
+
+    response = await client.get(
+        "/api/reports/financial-close",
+        params={"period": "2026-01"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["period"] == "2026-01"
+    assert payload["cutoff_date"]
+    assert payload["requested_period_end"] == "2026-01-31"
+    assert payload["metric_quality"]["withdrawal_rate_12m"]["status"] == "unavailable"
+    assert "period_policy" in payload["methodology"]
+
+
+@pytest.mark.asyncio
 async def test_financial_review_queue_is_aggregate_first_and_read_only(
     client, auth_headers, session, test_user, test_workspace, test_account
 ):
