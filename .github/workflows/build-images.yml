@@ -2,7 +2,7 @@ name: Build immutable Securo images
 
 on:
   push:
-    branches: [main, codex/financial-foundation]
+    branches: [main, codex/financial-foundation, codex/financial-foundation-integration]
   workflow_dispatch:
 
 permissions:
