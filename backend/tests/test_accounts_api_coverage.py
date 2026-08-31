@@ -269,6 +269,64 @@ async def test_account_bills_not_found(client: AsyncClient, auth_headers, test_a
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_credit_card_exposure_is_workspace_scoped(
+    client: AsyncClient, auth_headers, session, test_user, test_workspace
+):
+    """An exposure lookup cannot cross the active workspace boundary."""
+    from app.models.workspace import Workspace
+
+    other_workspace = Workspace(
+        name="Exposure other workspace",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="BRL",
+        locale="pt-BR",
+    )
+    session.add(other_workspace)
+    await session.flush()
+    other_account = Account(
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Other card",
+        type="credit_card",
+        balance=0,
+        currency="BRL",
+    )
+    session.add(other_account)
+    await session.commit()
+
+    response = await client.get(
+        f"/api/accounts/{other_account.id}/credit-card-exposure",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_credit_card_exposure_returns_structured_snapshot(
+    client: AsyncClient, auth_headers
+):
+    create = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Exposure card", "type": "credit_card", "balance": "0.00", "currency": "BRL"},
+    )
+    assert create.status_code == 201
+
+    response = await client.get(
+        f"/api/accounts/{create.json()['id']}/credit-card-exposure",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["currency"] == "BRL"
+    assert float(payload["committed_debt"]) == 0
+    assert {"source", "basis", "confidence", "known_future_installments"}.issubset(payload)
+
+
 # ---------------------------------------------------------------------------
 # auth
 # ---------------------------------------------------------------------------
