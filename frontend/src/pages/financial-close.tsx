@@ -236,7 +236,7 @@ export default function FinancialClosePage() {
                   {Object.entries(data.methodology ?? {}).map(([key, value]) => (
                     <div key={key}>
                       <dt className="font-medium text-foreground">{key.replaceAll('_', ' ')}</dt>
-                      <dd className="text-muted-foreground">{value}</dd>
+                      <dd className="text-muted-foreground">{key === 'financial_portfolio_net' ? t('financialClose.portfolioNetProxyMethodology') : value}</dd>
                     </div>
                   ))}
                 </dl>

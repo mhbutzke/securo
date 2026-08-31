@@ -1347,7 +1347,8 @@
   },
   "financialClose": {
     "portfolioNetProxyLabel": "Financial portfolio net (proxy)",
-    "portfolioNetProxyReason": "The Investible Portfolio collection is not configured yet. This value is a broad proxy over accounts and structural assets."
+    "portfolioNetProxyReason": "The Investible Portfolio collection is not configured yet. This value is a broad proxy over accounts and structural assets.",
+    "portfolioNetProxyMethodology": "Provisional proxy until the Investible Portfolio collection is configured"
   },
   "payees": {
     "addFavorite": "Add to favorites",

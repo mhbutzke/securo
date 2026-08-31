@@ -220,5 +220,6 @@ async def build_snapshot(session: AsyncSession, workspace_id: uuid.UUID, period:
             "savings_rate": "null when economic income is not positive",
             "principal_withdrawals": "excluded from economic income; linked cash legs are patrimonial transfers",
             "position_result": "interest increases/lowers result by side; fees and taxes are costs",
+            "financial_portfolio_net": "provisional proxy until the investible-portfolio Collection is configured",
         },
     }
