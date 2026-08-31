@@ -178,6 +178,25 @@ export interface Account {
   closed_at: string | null
 }
 
+export interface CreditCardExposure {
+  account_id: string
+  as_of: string
+  currency: string
+  closed_bill_unpaid: number
+  open_bill: number
+  committed_debt: number
+  after_current_bill: number
+  known_future_installments: number
+  unbilled_authorized: number
+  payments_credits_refunds: number
+  credit_limit: number | null
+  available_credit: number | null
+  current_bill_due_date: string | null
+  source: string
+  basis: string
+  confidence: string
+}
+
 export interface CreditCardBill {
   id: string
   account_id: string

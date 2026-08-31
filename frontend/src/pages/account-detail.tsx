@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Info, Paperclip, Pencil, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
@@ -345,6 +345,12 @@ export default function AccountDetailPage() {
     queryKey: ['accounts', id, 'bills'],
     queryFn: () => accounts.bills(id!, 24),
     enabled: !!id && account?.type === 'credit_card',
+  })
+  const { data: creditCardExposure } = useQuery({
+    queryKey: ['accounts', id, 'credit-card-exposure'],
+    queryFn: () => accounts.creditCardExposure(id!),
+    enabled: !!id && account?.type === 'credit_card',
+    staleTime: 30_000,
   })
   // Bills sorted oldest → newest, for indexing helpers below.
   const billsAsc = useMemo(() => {
@@ -1382,6 +1388,40 @@ export default function AccountDetailPage() {
           </div>
         )
       })()}
+
+      {isCreditCard && creditCardExposure && (
+        <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-5 mb-6">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Exposição consolidada</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Base: {creditCardExposure.basis} · confiança {creditCardExposure.confidence}
+              </p>
+            </div>
+            <Info className="h-4 w-4 text-muted-foreground shrink-0" aria-label="Detalhamento da exposição do cartão" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              ['Fatura fechada', creditCardExposure.closed_bill_unpaid],
+              ['Fatura aberta', creditCardExposure.open_bill],
+              ['Dívida comprometida', creditCardExposure.committed_debt],
+              ['Após a fatura atual', creditCardExposure.after_current_bill],
+            ].map(([label, value]) => (
+              <div key={label as string} className="rounded-lg border border-border bg-muted/20 px-3 py-2.5">
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{label as string}</p>
+                <p className="mt-1 text-sm sm:text-base font-semibold tabular-nums text-foreground">
+                  {mask(formatCurrency(Number(value), creditCardExposure.currency, locale))}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+            <span>Parcelas futuras conhecidas: <strong className="text-foreground">{mask(formatCurrency(Number(creditCardExposure.known_future_installments), creditCardExposure.currency, locale))}</strong></span>
+            <span>Não faturado/autorizado: <strong className="text-foreground">{mask(formatCurrency(Number(creditCardExposure.unbilled_authorized), creditCardExposure.currency, locale))}</strong></span>
+            {creditCardExposure.current_bill_due_date && <span>Vencimento: <strong className="text-foreground">{formatFriendlyDate(creditCardExposure.current_bill_due_date, dateLocale)}</strong></span>}
+          </div>
+        </div>
+      )}
 
       {/* Balance / Cycle spending chart */}
       {(() => {

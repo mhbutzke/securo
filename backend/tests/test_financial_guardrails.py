@@ -15,6 +15,7 @@ from app.schemas.position import PositionCreate, PositionMovementCreate
 from app.services.category_assignment import assign_category
 from app.services.position_service import add_movement, create_position, position_balance, reverse_movement
 from app.services.financial_close_service import build_snapshot
+from app.services.credit_card_exposure_service import get_exposure
 from app.services.period_cutoff import resolve_workspace_cutoff
 
 
@@ -404,6 +405,94 @@ async def test_financial_close_keeps_card_refund_as_income(session, test_user, t
 
     assert snapshot["income_economic"] == Decimal("20")
     assert snapshot["transfers_and_patrimonial_movements"] == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_credit_card_exposure_separates_current_and_future_commitments(
+    session, test_user, test_workspace
+):
+    today = date.today()
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Exposure card",
+        type="credit_card",
+        balance=Decimal("-500.00"),
+        currency="BRL",
+        credit_limit=Decimal("1000.00"),
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        CreditCardBill(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            external_id="exposure-closed",
+            due_date=today - timedelta(days=10),
+            total_amount=Decimal("200.00"),
+        ),
+        CreditCardBill(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            external_id="exposure-open",
+            due_date=today + timedelta(days=10),
+            total_amount=Decimal("100.00"),
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Future installment",
+            amount=Decimal("50.00"),
+            currency="BRL",
+            date=today,
+            effective_date=today + timedelta(days=1),
+            type="debit",
+            source="pluggy",
+            installment_number=1,
+            total_installments=3,
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Unbilled authorization",
+            amount=Decimal("30.00"),
+            currency="BRL",
+            date=today,
+            effective_date=today,
+            type="debit",
+            source="pluggy",
+            status="pending",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Refund",
+            amount=Decimal("20.00"),
+            currency="BRL",
+            date=today,
+            effective_date=today,
+            type="credit",
+            source="pluggy",
+        ),
+    ])
+    await session.commit()
+
+    exposure = await get_exposure(session, test_workspace.id, account.id)
+
+    assert exposure is not None
+    assert exposure["closed_bill_unpaid"] == Decimal("200.00")
+    assert exposure["open_bill"] == Decimal("100.00")
+    assert exposure["committed_debt"] == Decimal("500.00")
+    assert exposure["after_current_bill"] == Decimal("200.00")
+    assert exposure["known_future_installments"] == Decimal("50.00")
+    assert exposure["unbilled_authorized"] == Decimal("30.00")
+    assert exposure["payments_credits_refunds"] == Decimal("20.00")
+    assert exposure["available_credit"] == Decimal("500.00")
 
 
 @pytest.mark.asyncio

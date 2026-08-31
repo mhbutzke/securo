@@ -14,6 +14,7 @@ import type {
   ConnectionSettings,
   Account,
   AccountSummary,
+  CreditCardExposure,
   Collection,
   CreditCardBill,
   Transaction,
@@ -451,6 +452,10 @@ export const accounts = {
   },
   bills: async (id: string, limit = 24): Promise<CreditCardBill[]> => {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
+    return data
+  },
+  creditCardExposure: async (id: string): Promise<CreditCardExposure> => {
+    const { data } = await api.get(`/accounts/${id}/credit-card-exposure`)
     return data
   },
   close: async (id: string): Promise<Account> => {
