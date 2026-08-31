@@ -19,7 +19,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
-import { ClipboardCheck, HelpCircle, X } from 'lucide-react'
+import { BookOpenCheck, ClipboardCheck, HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -464,6 +464,9 @@ export default function ReportsPage() {
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link to="/reports/review"><ClipboardCheck className="h-4 w-4" /> Revisão financeira</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/reports/close"><BookOpenCheck className="h-4 w-4" /> Fechamento financeiro</Link>
             </Button>
             {isCashFlow && (
               <div

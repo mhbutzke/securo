@@ -1070,6 +1070,40 @@ export interface ReportResponse {
   category_trend: CategoryTrendItem[]
 }
 
+export interface FinancialCloseMetricQuality {
+  status: string
+  reason: string
+}
+
+/** Deterministic, read-only close snapshot returned by /reports/financial-close. */
+export interface FinancialCloseSnapshot {
+  period: string
+  as_of: string
+  requested_period_end: string
+  cutoff_date: string
+  cutoff_source: string
+  latest_sync_at: string | null
+  sync_is_stale: boolean
+  income_economic: number
+  position_interest_income: number
+  position_costs: number
+  consumption_recurring: number
+  transfers_and_patrimonial_movements: number
+  ignored_amount: number
+  portfolio_withdrawal_net: number | null
+  savings_rate: number | null
+  account_balance: number
+  asset_value: number
+  receivables: number
+  liabilities: number
+  net_worth_consolidated: number
+  financial_portfolio_net: number
+  withdrawal_rate_12m: number | null
+  liquidity_coverage: number | null
+  metric_quality: Record<string, FinancialCloseMetricQuality>
+  methodology: Record<string, string>
+}
+
 export type FinancialReviewQueueName =
   | 'all'
   | 'pending'

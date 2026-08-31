@@ -61,6 +61,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  FinancialCloseSnapshot,
   FinancialReviewQueueName,
   FinancialReviewQueueResponse,
   Group,
@@ -1364,6 +1365,10 @@ export const reports = {
     const { data } = await api.get('/reports/financial-review-queue', {
       params: { from_date: fromDate, to_date: toDate, queue, limit, offset },
     })
+    return data
+  },
+  financialClose: async (period: string): Promise<FinancialCloseSnapshot> => {
+    const { data } = await api.get('/reports/financial-close', { params: { period } })
     return data
   },
 }
