@@ -68,7 +68,7 @@ x-backend-env: &backend-env
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
 
 x-backend-base: &backend-base
-  image: ${BACKEND_IMAGE:-ghcr.io/mhbutzke/securo-backend@sha256:44f5f20d86ba04b612ff0f5d7757bfac1e5d446c5def07715612a304658745cc}
+  image: ${BACKEND_IMAGE:-ghcr.io/mhbutzke/securo-backend@sha256:ec745e992c186f0b5dfa6a4be5259434cb3f89c9e1a227cc37cfd4ff53a55d6f}
   environment: *backend-env
   depends_on:
     db: { condition: service_healthy }
@@ -126,7 +126,7 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
   frontend:
-    image: ${FRONTEND_IMAGE:-ghcr.io/mhbutzke/securo-frontend@sha256:819076bae9d51303e4fc08305ffc2f5ff2ebbae0fdc09d89f008853e27f40d05}
+    image: ${FRONTEND_IMAGE:-ghcr.io/mhbutzke/securo-frontend@sha256:c8bb70a802285179a13a023ac036e5f390924f99e2800f880ca103ddd038500b}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
     environment:
