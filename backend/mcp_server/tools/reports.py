@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Any
 
@@ -41,6 +42,11 @@ def _serialize_report(r: Any) -> dict[str, Any]:
                 "pattern": "^\\d{4}-\\d{2}$",
                 "description": "Closing period in YYYY-MM format.",
             },
+            "collection_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Optional Carteira investível Collection id. If omitted, a unique named Collection is resolved automatically.",
+            },
         },
         "required": ["period"],
         "additionalProperties": False,
@@ -52,9 +58,18 @@ async def get_financial_close(
     session: AsyncSession,
     ctx: CallContext,
     period: str,
+    collection_id: str | None = None,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
-    snapshot = await financial_close_service.build_snapshot(session, ws_id, period)
+    parsed_collection_id = None
+    if collection_id is not None:
+        try:
+            parsed_collection_id = uuid.UUID(collection_id)
+        except ValueError as exc:
+            raise ValueError("collection_id must be a UUID") from exc
+    snapshot = await financial_close_service.build_snapshot(
+        session, ws_id, period, collection_id=parsed_collection_id
+    )
     # MCP's JSONResponse cannot encode Decimal values directly. The encoder
     # also keeps dates and the nested metric-quality object deterministic.
     return jsonable_encoder(snapshot)

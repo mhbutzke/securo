@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import mcp_server.tools  # noqa: F401
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
+from app.models.collection import Collection
 
 
 pytestmark = pytest.mark.asyncio
@@ -231,6 +232,25 @@ async def test_financial_close_returns_deterministic_snapshot(
     assert "cutoff_date" in result
     assert "metric_quality" in result
     assert result["metric_quality"]["portfolio_withdrawal_net"]["status"] == "unavailable"
+
+
+async def test_financial_close_accepts_named_collection_id(
+    session: AsyncSession, ctx: CallContext, test_user, test_workspace
+):
+    collection = Collection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Carteira investível",
+    )
+    session.add(collection)
+    await session.commit()
+
+    handler = REGISTRY["get_financial_close"].handler
+    result = await handler(
+        session=session, ctx=ctx, period="2026-01", collection_id=str(collection.id)
+    )
+    assert result["financial_portfolio_collection_id"] == str(collection.id)
+    assert result["metric_quality"]["financial_portfolio_net"]["status"] == "available"
 
 
 async def test_list_budgets_empty(session: AsyncSession, ctx: CallContext):

@@ -1351,6 +1351,7 @@
     "portfolioNetProxyLabel": "Carteira financeira líquida (proxy)",
     "portfolioNetProxyReason": "A Collection Carteira investível ainda não está configurada. Este valor é uma proxy ampla sobre contas e ativos estruturais.",
     "portfolioNetProxyMethodology": "Proxy provisória até a configuração da Collection Carteira investível",
+    "portfolioNetSelectedMethodology": "Calculada a partir da Collection Carteira investível selecionada",
     "investibleCollectionLabel": "Collection Carteira investível",
     "noInvestibleCollection": "Usar proxy ampla (sem Collection)"
   },

@@ -343,12 +343,23 @@ async def test_financial_close_uses_explicit_collection_lens_for_portfolio_net(
         name="Broker loan", currency="BRL", original_principal=Decimal("50"),
         start_date=date(2026, 1, 1), liquidity="illiquid", status="open",
     )
-    session.add(liability)
+    receivable = Position(
+        user_id=test_user.id, workspace_id=test_workspace.id, side="receivable",
+        name="Private loan", currency="BRL", original_principal=Decimal("30"),
+        start_date=date(2026, 1, 1), liquidity="illiquid", status="open",
+    )
+    session.add_all([liability, receivable])
     await session.flush()
-    session.add(PositionMovement(
-        position_id=liability.id, kind="opening", principal_amount=Decimal("50"),
-        effective_date=date(2026, 1, 1), idempotency_key="broker-loan-open",
-    ))
+    session.add_all([
+        PositionMovement(
+            position_id=liability.id, kind="opening", principal_amount=Decimal("50"),
+            effective_date=date(2026, 1, 1), idempotency_key="broker-loan-open",
+        ),
+        PositionMovement(
+            position_id=receivable.id, kind="opening", principal_amount=Decimal("30"),
+            effective_date=date(2026, 1, 1), idempotency_key="private-loan-open",
+        ),
+    ])
     transfer_pair_id = uuid.uuid4()
     session.add_all([
         Transaction(
@@ -364,7 +375,7 @@ async def test_financial_close_uses_explicit_collection_lens_for_portfolio_net(
     ])
     collection = Collection(
         user_id=test_user.id, workspace_id=test_workspace.id, name="Carteira investível",
-        accounts=[selected_account], asset_groups=[wallet], positions=[liability],
+        accounts=[selected_account], asset_groups=[wallet], positions=[liability, receivable],
     )
     session.add(collection)
     await session.commit()
@@ -374,14 +385,31 @@ async def test_financial_close_uses_explicit_collection_lens_for_portfolio_net(
     )
 
     # Manual balances are ledger-derived; the paired withdrawal debits the
-    # selected account by 40 before the 200 asset and 50 liability are netted.
-    assert snapshot["financial_portfolio_net"] == Decimal("110")
+    # selected account by 40 before the 200 asset, 30 receivable and 50
+    # liability are netted.
+    assert snapshot["financial_portfolio_net"] == Decimal("140")
     assert snapshot["financial_portfolio_collection_id"] == str(collection.id)
     assert snapshot["financial_portfolio_collection_name"] == "Carteira investível"
     assert snapshot["portfolio_withdrawal_net"] == Decimal("40")
     assert snapshot["metric_quality"]["portfolio_withdrawal_net"]["status"] == "available"
     assert snapshot["metric_quality"]["financial_portfolio_net"]["status"] == "available"
     assert snapshot["metric_quality"]["financial_portfolio_net"]["code"] == "investible_portfolio_collection"
+
+
+@pytest.mark.asyncio
+async def test_financial_close_auto_resolves_unique_named_collection(
+    session, test_user, test_workspace
+):
+    collection = Collection(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Carteira investível"
+    )
+    session.add(collection)
+    await session.commit()
+
+    snapshot = await build_snapshot(session, test_workspace.id, "2026-01")
+
+    assert snapshot["financial_portfolio_collection_id"] == str(collection.id)
+    assert snapshot["metric_quality"]["financial_portfolio_net"]["status"] == "available"
 
 
 @pytest.mark.asyncio
@@ -396,6 +424,20 @@ async def test_financial_close_rejects_collection_from_another_workspace(
 
     with pytest.raises(LookupError):
         await build_snapshot(session, test_workspace.id, "2026-01", collection_id=other.id)
+
+
+@pytest.mark.asyncio
+async def test_financial_close_rejects_arbitrary_collection_as_investible_lens(
+    session, test_user, test_workspace
+):
+    collection = Collection(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Caixa familiar"
+    )
+    session.add(collection)
+    await session.commit()
+
+    with pytest.raises(ValueError, match="Carteira investível"):
+        await build_snapshot(session, test_workspace.id, "2026-01", collection_id=collection.id)
 
 
 @pytest.mark.asyncio

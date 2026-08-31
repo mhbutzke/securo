@@ -124,13 +124,11 @@ export default function FinancialClosePage() {
     staleTime: 30_000,
   })
   const collections = collectionsQuery.data ?? []
-  const namedInvestibleCollections = collections.filter(
+  const investibleCollections = collections.filter(
     (collection) => collection.name.trim().toLocaleLowerCase() === 'carteira investível',
   )
-  const autoCollectionId = namedInvestibleCollections.length === 1 ? namedInvestibleCollections[0].id : null
-  const effectiveCollectionId = selectedCollectionId === '__none__'
-    ? null
-    : selectedCollectionId || autoCollectionId
+  const autoCollectionId = investibleCollections.length === 1 ? investibleCollections[0].id : null
+  const effectiveCollectionId = selectedCollectionId || autoCollectionId
 
   const validPeriod = /^\d{4}-\d{2}$/.test(period)
   const query = useQuery<FinancialCloseSnapshot>({
@@ -183,15 +181,14 @@ export default function FinancialClosePage() {
             <div className="space-y-2 min-w-64">
               <Label htmlFor="close-investible-collection">{t('financialClose.investibleCollectionLabel')}</Label>
               <Select
-                value={selectedCollectionId || autoCollectionId || '__none__'}
+                value={selectedCollectionId || autoCollectionId || undefined}
                 onValueChange={setSelectedCollectionId}
               >
                 <SelectTrigger id="close-investible-collection" className="w-full">
-                  <SelectValue />
+                  <SelectValue placeholder={t('financialClose.noInvestibleCollection')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">{t('financialClose.noInvestibleCollection')}</SelectItem>
-                  {collections.map((collection) => (
+                  {investibleCollections.map((collection) => (
                     <SelectItem key={collection.id} value={collection.id}>{collection.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -269,7 +266,11 @@ export default function FinancialClosePage() {
                   {Object.entries(data.methodology ?? {}).map(([key, value]) => (
                     <div key={key}>
                       <dt className="font-medium text-foreground">{key.replaceAll('_', ' ')}</dt>
-                      <dd className="text-muted-foreground">{key === 'financial_portfolio_net' ? t('financialClose.portfolioNetProxyMethodology') : value}</dd>
+                      <dd className="text-muted-foreground">
+                        {key === 'financial_portfolio_net'
+                          ? t(data.financial_portfolio_collection_id ? 'financialClose.portfolioNetSelectedMethodology' : 'financialClose.portfolioNetProxyMethodology')
+                          : value}
+                      </dd>
                     </div>
                   ))}
                 </dl>

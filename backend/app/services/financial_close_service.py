@@ -11,7 +11,6 @@ from sqlalchemy.orm import selectinload
 
 from app.models.account import Account
 from app.models.asset import Asset
-from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.category import Category
 from app.models.collection import Collection
@@ -19,6 +18,12 @@ from app.models.position import Position
 from app.models.transaction import Transaction
 from app.services.dashboard_service import _account_balance_at
 from app.services.period_cutoff import resolve_workspace_cutoff
+
+INVESTIBLE_COLLECTION_NAME = "carteira investível"
+
+
+def _is_investible_collection(collection: Collection) -> bool:
+    return collection.name.strip().casefold() == INVESTIBLE_COLLECTION_NAME
 
 
 async def _snapshot_account_balance(
@@ -54,8 +59,8 @@ async def _load_collection(
         select(Collection)
         .options(
             selectinload(Collection.accounts),
-            selectinload(Collection.asset_groups).selectinload(AssetGroup.assets),
-            selectinload(Collection.positions).selectinload(Position.movements),
+            selectinload(Collection.asset_groups),
+            selectinload(Collection.positions),
         )
         .where(Collection.id == collection_id, Collection.workspace_id == workspace_id)
     )
@@ -65,12 +70,31 @@ async def _load_collection(
     return collection
 
 
+async def _resolve_investible_collection(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    collection_id: uuid.UUID | None,
+) -> Collection | None:
+    """Resolve the named lens, rejecting arbitrary reporting collections."""
+    if collection_id is not None:
+        collection = await _load_collection(session, workspace_id, collection_id)
+        if not _is_investible_collection(collection):
+            raise ValueError("collection_id must reference the Carteira investível collection")
+        return collection
+    result = await session.execute(select(Collection).where(Collection.workspace_id == workspace_id))
+    named = [collection for collection in result.scalars().all() if _is_investible_collection(collection)]
+    if len(named) != 1:
+        return None
+    return await _load_collection(session, workspace_id, named[0].id)
+
+
 async def _collection_withdrawal_net(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     collection_account_ids: set[uuid.UUID],
     period_pair_ids: set[uuid.UUID],
     cutoff: date,
+    start: date,
 ) -> Decimal:
     """Sum paired cash legs leaving/entering the selected account lens."""
     if not collection_account_ids or not period_pair_ids:
@@ -79,6 +103,7 @@ async def _collection_withdrawal_net(
         select(Transaction).where(
             Transaction.workspace_id == workspace_id,
             Transaction.transfer_pair_id.in_(period_pair_ids),
+            Transaction.date >= start,
             Transaction.date <= cutoff,
         )
     )
@@ -115,9 +140,7 @@ async def build_snapshot(
     cutoff_source = cutoff_info.source
     latest_sync_at = cutoff_info.latest_sync_at
     sync_is_stale = cutoff_info.sync_is_stale
-    collection = None
-    if collection_id is not None:
-        collection = await _load_collection(session, workspace_id, collection_id)
+    collection = await _resolve_investible_collection(session, workspace_id, collection_id)
     collection_account_ids = {account.id for account in collection.accounts} if collection else set()
     collection_wallet_ids = {wallet.id for wallet in collection.asset_groups} if collection else set()
     collection_position_ids = {position.id for position in collection.positions} if collection else set()
@@ -212,6 +235,7 @@ async def build_snapshot(
             portfolio_asset_total += value
 
     receivables = Decimal("0")
+    portfolio_receivables = Decimal("0")
     liabilities = Decimal("0")
     portfolio_liabilities = Decimal("0")
     position_interest_income = Decimal("0")
@@ -237,7 +261,10 @@ async def build_snapshot(
         )
         side = position.side
         if side == "receivable":
-            receivables += Decimal(str(principal or 0))
+            principal = Decimal(str(principal or 0))
+            receivables += principal
+            if position.id in collection_position_ids:
+                portfolio_receivables += principal
         else:
             principal = Decimal(str(principal or 0))
             liabilities += principal
@@ -251,7 +278,7 @@ async def build_snapshot(
     portfolio_withdrawals = None
     if collection is not None:
         portfolio_withdrawals = await _collection_withdrawal_net(
-            session, workspace_id, collection_account_ids, period_transfer_pair_ids, cutoff
+            session, workspace_id, collection_account_ids, period_transfer_pair_ids, cutoff, start
         )
     savings_rate = None if income <= 0 else (income - consumption) / income
     # Until the user explicitly configures the investible-portfolio lens, this
@@ -259,10 +286,15 @@ async def build_snapshot(
     # for continuity, but label it so downstream UI and narrators cannot pass
     # it off as a true investible-portfolio balance.
     if collection is not None:
-        financial_portfolio_net = portfolio_account_balance + portfolio_asset_total - portfolio_liabilities
+        financial_portfolio_net = (
+            portfolio_account_balance
+            + portfolio_asset_total
+            + portfolio_receivables
+            - portfolio_liabilities
+        )
         financial_portfolio_quality = {
             "status": "available",
-            "reason": "Calculated from the explicitly selected Collection lens.",
+            "reason": "Calculated from accounts, AssetGroups and Positions in the explicitly selected Collection lens.",
             "code": "investible_portfolio_collection",
         }
     else:
@@ -326,6 +358,8 @@ async def build_snapshot(
             "savings_rate": "null when economic income is not positive",
             "principal_withdrawals": "excluded from economic income; linked cash legs are patrimonial transfers",
             "position_result": "interest increases/lowers result by side; fees and taxes are costs",
-            "financial_portfolio_net": "provisional proxy until the investible-portfolio Collection is configured",
+            "financial_portfolio_net": "calculated from the selected investible-portfolio Collection"
+            if collection is not None
+            else "provisional proxy until the investible-portfolio Collection is configured",
         },
     }
